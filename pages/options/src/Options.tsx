@@ -3,7 +3,6 @@ import '@src/Options.css';
 import { Button } from '@extension/ui';
 import { withErrorBoundary, withSuspense } from '@extension/shared';
 import { t } from '@extension/i18n';
-import { FiSettings, FiCpu, FiShield, FiTrendingUp, FiHelpCircle } from 'react-icons/fi';
 import { GeneralSettings } from './components/GeneralSettings';
 import { FirewallSettings } from './components/FirewallSettings';
 import { ModelSettings } from './components/ModelSettings';
@@ -53,7 +52,7 @@ const Options = () => {
                         ? 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
                         : 'bg-gray-900 text-white border border-gray-900'
                     }`}>
-                  <item.icon className="h-4 w-4" />
+                  <span>{item.icon}</span>
                   <span>{item.label}</span>
                 </Button>
               </li>
