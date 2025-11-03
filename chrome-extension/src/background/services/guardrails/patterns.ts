@@ -140,12 +140,7 @@ export function getPatterns(strict: boolean = false): SecurityPattern[] {
 /**
  * Tags to preserve during sanitization (wrapped content tags)
  */
-export const PRESERVED_TAGS = [
-  'nano_untrusted_content',
-  'nano_user_request',
-  'nano_attached_files',
-  'nano_file_content',
-];
+export const PRESERVED_TAGS = ['visible_untrusted_content', 'visible_user_request'];
 
 /**
  * Check if a tag should be preserved during sanitization

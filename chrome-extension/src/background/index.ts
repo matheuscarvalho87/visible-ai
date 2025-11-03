@@ -18,12 +18,14 @@ import { DEFAULT_AGENT_OPTIONS } from './agent/types';
 import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
+import { AccessibilityService } from './services/accessibility';
 
 const logger = createLogger('background');
 
 const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
+const accessibilityService = new AccessibilityService(browserContext);
 
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
@@ -232,6 +234,36 @@ chrome.runtime.onConnect.addListener(port => {
               });
             }
             break;
+          }
+
+          case 'start_accessibility_analysis': {
+            try {
+              if (!message.tabId) {
+                return port.postMessage({
+                  type: 'accessibility_analysis_error',
+                  error: 'No tab ID provided',
+                });
+              }
+
+              logger.info('Starting accessibility analysis for tab:', message.tabId, 'URL:', message.url);
+
+              // Use local accessibility service instead of backend
+              const analysisResult = await accessibilityService.analyzeAccessibility(message.tabId, message.url);
+
+              return port.postMessage({
+                type: 'accessibility_analysis_complete',
+                report: {
+                  pageSummary: analysisResult.pageSummary,
+                },
+                imageAnalysis: analysisResult.imageAnalysis,
+              });
+            } catch (error) {
+              logger.error('Accessibility analysis failed:', error);
+              return port.postMessage({
+                type: 'accessibility_analysis_error',
+                error: error instanceof Error ? error.message : 'Failed to perform accessibility analysis',
+              });
+            }
           }
 
           default:

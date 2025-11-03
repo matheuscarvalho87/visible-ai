@@ -1,17 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RxDiscordLogo } from 'react-icons/rx';
-import { FiSettings } from 'react-icons/fi';
-import { PiPlusBold } from 'react-icons/pi';
-import { GrHistory } from 'react-icons/gr';
+import { FiSettings, FiEye } from 'react-icons/fi';
 import {
+  type AccessibilityReport,
   type Message,
   Actors,
   chatHistoryStore,
   agentModelStore,
   generalSettingsStore,
   accessibilityStore,
-  type AccessibilityReport,
 } from '@extension/storage';
 import favoritesStorage, { type FavoritePrompt } from '@extension/storage/lib/prompt/favorites';
 import { t } from '@extension/i18n';
@@ -23,11 +20,17 @@ import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 import AccessibilityAnalyzer from './components/AccessibiltyAnalyzer';
 
-// Declare chrome API types
-declare global {
-  interface Window {
-    chrome: typeof chrome;
-  }
+export interface CurrentPageDataProps {
+  id: string;
+  pageUrl: string;
+  pageSummary: string;
+  imageAnalysis?: {
+    imageUrl: string;
+    currentAlt: string;
+    generatedAlt?: string;
+  }[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 const SidePanel = () => {
@@ -38,8 +41,9 @@ const SidePanel = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showAccessibilityAnalyzer, setShowAccessibilityAnalyzer] = useState(false);
-  const [currentPageData, setCurrentPageData] = useState<{ id: string; url: string; createdAt: number } | null>(null);
+  const [currentPageData, setCurrentPageData] = useState<CurrentPageDataProps | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // const [accessibilityResult, setAccessibilityResult] = useState<string | null>(null);
 
   // Function to update current page data
   const updateCurrentPageData = useCallback(async () => {
@@ -47,10 +51,15 @@ const SidePanel = () => {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const currentTab = tabs[0];
       if (currentTab?.url) {
+        const loadedSummary = await accessibilityStore.getAccessibilityReport(currentTab.url);
+
         setCurrentPageData({
           id: currentTab.id?.toString() || crypto.randomUUID(),
-          url: currentTab.url,
-          createdAt: Date.now(),
+          pageUrl: currentTab.url,
+          pageSummary: loadedSummary?.pageSummary || '',
+          imageAnalysis: loadedSummary?.imageAnalysis || [],
+          updatedAt: Date.now(),
+          createdAt: loadedSummary?.createdAt || Date.now(),
         });
       }
     } catch (error) {
@@ -60,7 +69,6 @@ const SidePanel = () => {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
   const [isFollowUpMode, setIsFollowUpMode] = useState(false);
   const [isHistoricalSession, setIsHistoricalSession] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [favoritePrompts, setFavoritePrompts] = useState<FavoritePrompt[]>([]);
   const [hasConfiguredModels, setHasConfiguredModels] = useState<boolean | null>(null); // null = loading, false = no models, true = has models
   const [isRecording, setIsRecording] = useState(false);
@@ -76,19 +84,6 @@ const SidePanel = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
-
-  // Check for dark mode preference
-  useEffect(() => {
-    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDarkMode(darkModeMediaQuery.matches);
-
-    const handleChange = (e: MediaQueryListEvent) => {
-      setIsDarkMode(e.matches);
-    };
-
-    darkModeMediaQuery.addEventListener('change', handleChange);
-    return () => darkModeMediaQuery.removeEventListener('change', handleChange);
-  }, []);
 
   // Check if models are configured
   const checkModelConfiguration = useCallback(async () => {
@@ -386,6 +381,58 @@ const SidePanel = () => {
           setIsProcessingSpeech(false);
         } else if (message && message.type === 'heartbeat_ack') {
           console.log('Heartbeat acknowledged');
+        } else if (message && message.type === 'accessibility_analysis_complete') {
+          // Handle accessibility analysis completion
+          console.log('Accessibility analysis completed:', message.report);
+          setIsAnalyzing(false);
+
+          // Get current tab URL to ensure we use the correct URL
+          const getCurrentTabUrl = async (): Promise<string> => {
+            try {
+              const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+              return tabs[0]?.url || 'unknown';
+            } catch (error) {
+              console.error('Failed to get current tab URL:', error);
+              return currentPageData?.pageUrl || 'unknown';
+            }
+          };
+
+          getCurrentTabUrl().then(currentUrl => {
+            const report: AccessibilityReport = {
+              pageSummary: message.report?.pageSummary || 'Analysis completed',
+              pageUrl: currentUrl,
+              imageAnalysis: message.imageAnalysis || [],
+              createdAt: currentPageData?.createdAt || Date.now(),
+              updatedAt: Date.now(),
+            };
+
+            setCurrentPageData(prev =>
+              prev
+                ? {
+                    ...prev,
+                    pageUrl: currentUrl,
+                    pageSummary: message.report?.pageSummary || 'Analysis completed',
+                    imageAnalysis: message.imageAnalysis || [],
+                    updatedAt: report.updatedAt,
+                  }
+                : prev,
+            );
+
+            // Save the report to storage if we have page data
+            if (message.report) {
+              accessibilityStore
+                .saveAccessibilityReport(report)
+                .catch(err => console.error('Failed to save accessibility report:', err));
+            }
+          });
+        } else if (message && message.type === 'accessibility_analysis_error') {
+          // Handle accessibility analysis error
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: `Accessibility analysis error: ${message.error || 'Unknown error'}`,
+            timestamp: Date.now(),
+          });
+          setIsAnalyzing(false);
         }
       });
 
@@ -428,7 +475,7 @@ const SidePanel = () => {
       // Clear any references since connection failed
       portRef.current = null;
     }
-  }, [handleTaskState, appendMessage, stopConnection]);
+  }, [handleTaskState, appendMessage, stopConnection, currentPageData?.pageUrl]);
 
   // Add safety check for message sending
   const sendMessage = useCallback(
@@ -722,6 +769,7 @@ const SidePanel = () => {
     setIsFollowUpMode(false);
     setIsHistoricalSession(false);
     setShowAccessibilityAnalyzer(false);
+    // setAccessibilityResult(null);
 
     // Disconnect any existing connection
     stopConnection();
@@ -741,10 +789,10 @@ const SidePanel = () => {
     }
   }, []);
 
-  const handleLoadHistory = async () => {
-    await loadChatSessions();
-    setShowHistory(true);
-  };
+  // const handleLoadHistory = async () => {
+  //   await loadChatSessions();
+  //   setShowHistory(true);
+  // };
 
   const handleBackToChat = (reset = false) => {
     setShowHistory(false);
@@ -1061,116 +1109,46 @@ const SidePanel = () => {
 
     setIsAnalyzing(true);
     try {
-      // Check if we already have a report for this URL
-      const existingReport = await accessibilityStore.getAccessibilityReport(currentPageData.url);
-      if (existingReport) {
-        console.log('Using existing accessibility report:', existingReport);
-        setIsAnalyzing(false);
-        return;
-      }
+      console.log('Starting accessibility analysis for', currentPageData.pageUrl);
 
-      // Get current tab content
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const tabId = tabs[0]?.id;
       if (!tabId) {
         throw new Error('No active tab found');
       }
 
-      // Check if scripting API is available
-      if (!chrome.scripting) {
-        throw new Error('Chrome scripting API not available');
+      // Setup connection if not exists
+      if (!portRef.current) {
+        setupConnection();
       }
 
-      // Inject content script to get page content and images
-      const results = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => {
-          // Get page text content
-          const content = document.body.innerText || document.body.textContent || '';
-
-          // Get all images with their URLs and alt texts
-          const images = Array.from(document.querySelectorAll('img')).map(img => ({
-            imageUrl: img.src,
-            currentAlt: img.alt || '',
-          }));
-
-          return { content, images };
-        },
+      // Send message to background script to start accessibility analysis
+      sendMessage({
+        type: 'start_accessibility_analysis',
+        url: currentPageData.pageUrl,
+        tabId: tabId,
       });
-
-      if (!results || results.length === 0) {
-        throw new Error('Failed to execute script on page');
-      }
-
-      const { content, images } = results[0].result || { content: '', images: [] };
-
-      // Call summarize API
-      const summaryResponse = await fetch('http://localhost:5432/api/summarize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content }),
-      });
-
-      if (!summaryResponse.ok) {
-        throw new Error('Failed to get page summary');
-      }
-
-      const { summary } = await summaryResponse.json();
-
-      // Call image analysis API
-      const imageUrls = images.map((img: { imageUrl: string; currentAlt: string }) => img.imageUrl);
-      const imageAnalysisResponse = await fetch('http://localhost:5432/api/image-analysis', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageUrls,
-          pageSummary: summary,
-        }),
-      });
-
-      if (!imageAnalysisResponse.ok) {
-        throw new Error('Failed to analyze images');
-      }
-
-      const { imageAnalysis } = await imageAnalysisResponse.json();
-
-      // Create and save accessibility report
-      const report: AccessibilityReport = {
-        pageUrl: currentPageData.url,
-        pageSummary: summary,
-        imageAnalysis: images.map((img: { imageUrl: string; currentAlt: string }, index: number) => ({
-          imageUrl: img.imageUrl,
-          currentAlt: img.currentAlt,
-          generatedAlt: imageAnalysis[index]?.generatedAlt || '',
-        })),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
-      await accessibilityStore.saveAccessibilityReport(report);
-      console.log('Accessibility analysis completed:', report);
     } catch (error) {
-      console.error('Failed to perform accessibility analysis:', error);
-    } finally {
+      console.error('Error starting accessibility analysis:', error);
+      appendMessage({
+        actor: Actors.SYSTEM,
+        content: `Error starting accessibility analysis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: Date.now(),
+      });
       setIsAnalyzing(false);
     }
   };
 
   return (
     <div>
-      <div
-        className={`flex h-screen flex-col ${isDarkMode ? 'bg-slate-900' : "bg-[url('/bg.jpg')] bg-cover bg-no-repeat"} overflow-hidden border ${isDarkMode ? 'border-sky-800' : 'border-[rgb(186,230,253)]'} rounded-2xl`}>
+      <div className="flex h-screen flex-col bg-white overflow-hidden border border-gray-300 rounded-2xl">
         <header className="header relative">
           <div className="header-logo">
             {showHistory ? (
               <button
                 type="button"
                 onClick={() => handleBackToChat(false)}
-                className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                className="text-gray-900 hover:text-gray-700 cursor-pointer"
                 aria-label={t('nav_back_a11y')}>
                 {t('nav_back')}
               </button>
@@ -1183,45 +1161,16 @@ const SidePanel = () => {
               type="button"
               onClick={handleShowAnalyzeAccessibility}
               onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
-              aria-label="Analisar acessibilidade"
+              className="header-icon text-gray-900 hover:text-gray-700 cursor-pointer"
+              aria-label="Check accessibility"
               tabIndex={0}>
-              Analisar acessibilidade
+              <FiEye size={20} />
             </button>
-            {!showHistory && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleNewChat}
-                  onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
-                  aria-label={t('nav_newChat_a11y')}
-                  tabIndex={0}>
-                  <PiPlusBold size={20} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLoadHistory}
-                  onKeyDown={e => e.key === 'Enter' && handleLoadHistory()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
-                  aria-label={t('nav_loadHistory_a11y')}
-                  tabIndex={0}>
-                  <GrHistory size={20} />
-                </button>
-              </>
-            )}
-            <a
-              href="https://discord.gg/NN3ABHggMK"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'}`}>
-              <RxDiscordLogo size={20} />
-            </a>
             <button
               type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
               onKeyDown={e => e.key === 'Enter' && chrome.runtime.openOptionsPage()}
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+              className="header-icon text-gray-900 hover:text-gray-700 cursor-pointer"
               aria-label={t('nav_settings_a11y')}
               tabIndex={0}>
               <FiSettings size={20} />
@@ -1236,17 +1185,16 @@ const SidePanel = () => {
               onSessionDelete={handleSessionDelete}
               onSessionBookmark={handleSessionBookmark}
               visible={true}
-              isDarkMode={isDarkMode}
+              isDarkMode={false}
             />
           </div>
         ) : (
           <>
             {/* Show loading state while checking model configuration */}
             {hasConfiguredModels === null && (
-              <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+              <div className="flex flex-1 items-center justify-center p-8 text-gray-900">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent"></div>
+                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"></div>
                   <p>{t('status_checkingConfig')}</p>
                 </div>
               </div>
@@ -1254,38 +1202,16 @@ const SidePanel = () => {
 
             {/* Show setup message when no models are configured */}
             {hasConfiguredModels === false && (
-              <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+              <div className="flex flex-1 items-center justify-center p-8 text-gray-900">
                 <div className="max-w-md text-center">
-                  <img src="/icon-128.png" alt="Nanobrowser Logo" className="mx-auto mb-4 size-12" />
-                  <h3 className={`mb-2 text-lg font-semibold ${isDarkMode ? 'text-sky-200' : 'text-sky-700'}`}>
-                    {t('welcome_title')}
-                  </h3>
+                  <img src="/icon-128.png" alt="VisibleAi Logo" className="mx-auto mb-4 size-12" />
+                  <h3 className="mb-2 text-lg font-semibold text-gray-900">{t('welcome_title')}</h3>
                   <p className="mb-4">{t('welcome_instruction')}</p>
                   <button
                     onClick={() => chrome.runtime.openOptionsPage()}
-                    className={`my-4 rounded-lg px-4 py-2 font-medium transition-colors ${
-                      isDarkMode ? 'bg-sky-600 text-white hover:bg-sky-700' : 'bg-sky-500 text-white hover:bg-sky-600'
-                    }`}>
+                    className="my-4 rounded-lg px-4 py-2 font-medium transition-colors bg-gray-900 text-white hover:bg-gray-700">
                     {t('welcome_openSettings')}
                   </button>
-                  <div className="mt-4 text-sm opacity-75">
-                    <a
-                      href="https://github.com/nanobrowser/nanobrowser?tab=readme-ov-file#-quick-start"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-700 hover:text-sky-600'}`}>
-                      {t('welcome_quickStart')}
-                    </a>
-                    <span className="mx-2">•</span>
-                    <a
-                      href="https://discord.gg/NN3ABHggMK"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-700 hover:text-sky-600'}`}>
-                      {t('welcome_joinCommunity')}
-                    </a>
-                  </div>
                 </div>
               </div>
             )}
@@ -1293,12 +1219,13 @@ const SidePanel = () => {
             {showAccessibilityAnalyzer && (
               <div className="flex-1 overflow-hidden">
                 <AccessibilityAnalyzer
-                  isDarkMode={isDarkMode}
+                  isDarkMode={false}
                   onClose={() => setShowAccessibilityAnalyzer(false)}
                   onHandleStarBasicAnalysis={handleBasicAccessibilityAnalysis}
                   visible={true}
                   currentPageData={currentPageData!}
                   isAnalyzing={isAnalyzing}
+                  // accessibilityResult={accessibilityResult}
                 />
               </div>
             )}
@@ -1308,8 +1235,7 @@ const SidePanel = () => {
               <>
                 {messages.length === 0 && (
                   <>
-                    <div
-                      className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} mb-2 p-2 shadow-sm backdrop-blur-sm`}>
+                    <div className="border-t border-gray-200 mb-2 p-2 shadow-sm bg-white">
                       <ChatInput
                         onSendMessage={handleSendMessage}
                         onStopTask={handleStopTask}
@@ -1321,7 +1247,7 @@ const SidePanel = () => {
                         setContent={setter => {
                           setInputTextRef.current = setter;
                         }}
-                        isDarkMode={isDarkMode}
+                        isDarkMode={false}
                         historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
                         onReplay={handleReplay}
                       />
@@ -1333,21 +1259,19 @@ const SidePanel = () => {
                         onBookmarkUpdateTitle={handleBookmarkUpdateTitle}
                         onBookmarkDelete={handleBookmarkDelete}
                         onBookmarkReorder={handleBookmarkReorder}
-                        isDarkMode={isDarkMode}
+                        isDarkMode={false}
                       />
                     </div>
                   </>
                 )}
                 {messages.length > 0 && (
-                  <div
-                    className={`scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 ${isDarkMode ? 'bg-slate-900/80' : ''}`}>
-                    <MessageList messages={messages} isDarkMode={isDarkMode} />
+                  <div className="scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 bg-white">
+                    <MessageList messages={messages} isDarkMode={false} />
                     <div ref={messagesEndRef} />
                   </div>
                 )}
                 {messages.length > 0 && (
-                  <div
-                    className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} p-2 shadow-sm backdrop-blur-sm`}>
+                  <div className="border-t border-gray-200 p-2 shadow-sm bg-white">
                     <ChatInput
                       onSendMessage={handleSendMessage}
                       onStopTask={handleStopTask}
@@ -1359,7 +1283,7 @@ const SidePanel = () => {
                       setContent={setter => {
                         setInputTextRef.current = setter;
                       }}
-                      isDarkMode={isDarkMode}
+                      isDarkMode={false}
                       historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
                       onReplay={handleReplay}
                     />
