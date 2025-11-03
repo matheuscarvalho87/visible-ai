@@ -62,6 +62,12 @@ export const SECURITY_PATTERNS: SecurityPattern[] = [
     replacement: '',
   },
   {
+    pattern: /\bnano[-_]+attached[-_]+files\b/gi,
+    type: ThreatType.PROMPT_INJECTION,
+    description: 'Reference to attached files',
+    replacement: '',
+  },
+  {
     pattern: /\buser[-_]+request\b/gi,
     type: ThreatType.PROMPT_INJECTION,
     description: 'Reference to user request',
@@ -141,7 +147,7 @@ export const PRESERVED_TAGS = ['visible_untrusted_content', 'visible_user_reques
  * @param tag - The tag to check
  * @returns True if the tag should be preserved
  */
-export function shouldPreserveTag(tag: string): boolean {
+export function isPreserveTag(tag: string): boolean {
   const tagName = tag.replace(/<\/?|\s|>/g, '').toLowerCase();
   return PRESERVED_TAGS.includes(tagName);
 }
