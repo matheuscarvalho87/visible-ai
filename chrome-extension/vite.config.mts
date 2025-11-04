@@ -13,6 +13,8 @@ const outDir = resolve(rootDir, '..', 'dist');
 export default defineConfig(({ mode }) => {
   // Load environment variables from the parent directory
   const env = loadEnv(mode, resolve(rootDir, '..'), 'VITE_');
+  // Also load DEFAULT_OPENAI_KEY for initial setup
+  const allEnv = loadEnv(mode, resolve(rootDir, '..'), '');
 
   return {
     resolve: {
@@ -68,6 +70,9 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.DEV': isDev,
       'import.meta.env.VITE_POSTHOG_API_KEY': JSON.stringify(
         env.VITE_POSTHOG_API_KEY || process.env.VITE_POSTHOG_API_KEY || '',
+      ),
+      'import.meta.env.DEFAULT_OPENAI_KEY': JSON.stringify(
+        allEnv.DEFAULT_OPENAI_KEY || process.env.DEFAULT_OPENAI_KEY || '',
       ),
     },
 

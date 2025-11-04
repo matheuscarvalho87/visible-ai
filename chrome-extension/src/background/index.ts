@@ -19,6 +19,7 @@ import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
 import { AccessibilityService } from './services/accessibility';
+import { initializeDefaultConfig } from './utils/initializeDefaultConfig';
 
 const logger = createLogger('background');
 
@@ -54,6 +55,21 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 
 logger.info('background loaded');
+
+// Initialize default configuration from environment on extension install
+chrome.runtime.onInstalled.addListener(details => {
+  if (details.reason === 'install') {
+    logger.info('Extension installed, initializing default configuration');
+    initializeDefaultConfig().catch(error => {
+      logger.error('Failed to initialize default configuration:', error);
+    });
+  }
+});
+
+// Also initialize on startup if not already configured
+initializeDefaultConfig().catch(error => {
+  logger.error('Failed to initialize default configuration:', error);
+});
 
 // Initialize analytics
 analytics.init().catch(error => {
