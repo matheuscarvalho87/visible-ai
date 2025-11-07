@@ -268,6 +268,10 @@ chrome.runtime.onConnect.addListener(port => {
               // Use local accessibility service instead of backend
               const analysisResult = await accessibilityService.analyzeAccessibility(message.tabId, message.url);
 
+              if (!analysisResult) {
+                throw new Error('Analysis returned no result');
+              }
+
               return port.postMessage({
                 type: 'accessibility_analysis_complete',
                 report: {
@@ -315,7 +319,7 @@ chrome.runtime.onConnect.addListener(port => {
                 });
               } catch (contentScriptError) {
                 // If content script is not responding, try to inject it first
-                logger.warn('Content script not responding, attempting to reload page or re-inject');
+                logger.error('Content script not responding, attempting to reload page or re-inject');
                 throw new Error('Content script not available. Please refresh the page and try again.');
               }
             } catch (error) {

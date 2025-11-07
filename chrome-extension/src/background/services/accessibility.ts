@@ -1,21 +1,19 @@
 import { createLogger } from '../log';
 import { createChatModel } from '../agent/helper';
-import { agentModelStore, llmProviderStore, AgentNameEnum, generalSettingsStore } from '@extension/storage';
+import {
+  agentModelStore,
+  llmProviderStore,
+  AgentNameEnum,
+  ProviderTypeEnum,
+  type ProviderConfig,
+  type ModelConfig,
+} from '@extension/storage';
 import type BrowserContext from '../browser/context';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
 import { ReadabilityService } from './readability';
-import { DOMContextEnricher } from './domContextEnricher';
-import { VisionContextValidator } from './visionContextValidator';
-import { HybridImageScorer } from './hybridImageScorer';
-import { t } from '@extension/i18n';
-import type { ContextualizedImageInfo, AnalysisQualityMetrics } from '@extension/storage/lib/accessibility/types';
-import { SemanticArea } from '@extension/storage/lib/accessibility/types';
 
 const logger = createLogger('AccessibilityService');
 
-/**
- * Basic image information from initial extraction (before DOM enrichment)
- */
 interface BasicImageInfo {
   imageUrl: string;
   currentAlt: string;
@@ -47,181 +45,227 @@ export class AccessibilityService {
    */
   async extractImages(tabId: number): Promise<BasicImageInfo[]> {
     try {
+      logger.info('Extracting images from tab:', tabId);
+
       const results = await chrome.scripting.executeScript({
         target: { tabId },
         func: () => {
-          // Define the isMainContentImage function inside the injected script
-          const isMainContentImage = (img: HTMLImageElement): boolean => {
-            const src = img.src.toLowerCase();
-            const alt = img.alt.toLowerCase();
-            const className = img.className.toLowerCase();
-            const parent = img.parentElement;
+          interface BasicImageInfo {
+            imageUrl: string;
+            currentAlt: string;
+            selector: string;
+            isMainContent: boolean;
+            importanceScore: number;
+          }
 
-            // Skip very small images (likely icons or decorative)
-            if (img.naturalWidth < 32 || img.naturalHeight < 32) {
-              return false;
-            }
+          // Helper: Check if URL is a valid image
+          const isValidImageUrl = (url: string): boolean => {
+            if (!url || url.length === 0) return false;
 
-            // Skip tracking pixels and tiny analytics images
-            if (img.naturalWidth === 1 || img.naturalHeight === 1) {
-              return false;
-            }
+            // Exclude SVGs and common ad patterns
+            if (url.includes('.svg') || url.includes('data:image/svg')) return false;
+            if (url.includes('/ad/') || url.includes('/ads/') || url.includes('advertisement')) return false;
+            if (url.includes('banner') || url.includes('tracking')) return false;
 
-            // Strong indicators of main content images
-            const contentKeywords = [
-              'entry-image',
-              'post-image',
-              'article-image',
-              'content-image',
-              'singular-image',
-              'featured-image',
-              'hero-image',
-              'main-image',
-            ];
-
-            const hasContentKeywords = contentKeywords.some(keyword => className.includes(keyword));
-
-            if (hasContentKeywords) {
-              return true;
-            }
-
-            // Skip obvious advertisement images
-            const adKeywords = ['banner', 'sponsor', 'promo', 'advertisement', '_ad_'];
-            const hasStrictAdKeywords = adKeywords.some(
-              keyword => src.includes(keyword) || className.includes(keyword),
+            // Accept standard image formats
+            return (
+              url.includes('image') ||
+              url.includes('http') ||
+              url.includes('jpg') ||
+              url.includes('jpeg') ||
+              url.includes('png') ||
+              url.includes('webp')
             );
+          };
 
-            if (hasStrictAdKeywords) {
-              return false;
+          // Helper: Extract URL from CSS background-image property
+          const extractBackgroundImageUrl = (element: Element): string | null => {
+            const style = window.getComputedStyle(element);
+            const bgImage = style.backgroundImage;
+
+            if (!bgImage || bgImage === 'none') return null;
+
+            // Extract URL from url("...") or url('...')
+            const urlMatch = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/);
+            if (!urlMatch) return null;
+
+            const url = urlMatch[1];
+            return isValidImageUrl(url) ? url : null;
+          };
+
+          // Helper: Generate CSS selector for an element
+          const generateSelector = (element: Element): string => {
+            if (element.id) {
+              return `#${element.id}`;
             }
 
-            // Skip navigation areas but be more specific
-            if (parent) {
-              const parentClasses = parent.className.toLowerCase();
-              const navKeywords = ['navigation', 'navbar', 'header-nav', 'footer-nav'];
-              const isInStrictNavArea = navKeywords.some(keyword => parentClasses.includes(keyword));
+            const path: string[] = [];
+            let current: Element | null = element;
 
-              if (isInStrictNavArea) {
+            while (current && current !== document.body) {
+              let selector = current.tagName.toLowerCase();
+
+              if (current.className && typeof current.className === 'string') {
+                const classes = current.className.trim().split(/\s+/).slice(0, 2); // Use first 2 classes
+                if (classes.length > 0) {
+                  selector += `.${classes.join('.')}`;
+                }
+              }
+
+              path.unshift(selector);
+              current = current.parentElement;
+
+              // Limit depth
+              if (path.length >= 5) break;
+            }
+
+            return path.join(' > ');
+          };
+
+          // Helper: Check if element is in main content area
+          const isInMainContent = (element: Element): boolean => {
+            let current: Element | null = element;
+
+            while (current) {
+              const tagName = current.tagName.toLowerCase();
+              const className = current.className?.toString().toLowerCase() || '';
+              const id = current.id?.toLowerCase() || '';
+
+              // Check for main content indicators
+              if (
+                tagName === 'main' ||
+                tagName === 'article' ||
+                className.includes('main') ||
+                className.includes('content') ||
+                className.includes('article') ||
+                id.includes('main') ||
+                id.includes('content')
+              ) {
+                return true;
+              }
+
+              // Check for non-content areas
+              if (
+                tagName === 'nav' ||
+                tagName === 'aside' ||
+                tagName === 'footer' ||
+                tagName === 'header' ||
+                className.includes('sidebar') ||
+                className.includes('menu') ||
+                className.includes('nav') ||
+                className.includes('ad') ||
+                className.includes('banner')
+              ) {
                 return false;
               }
-            }
 
-            // Skip avatars and profile images (usually small and circular)
-            if (className.includes('avatar') || className.includes('profile')) {
-              return false;
-            }
-
-            // Skip logos unless they're large (might be article logos)
-            if (className.includes('logo') && (img.naturalWidth < 200 || img.naturalHeight < 100)) {
-              return false;
-            }
-
-            // Images with meaningful alt text are likely main content
-            if (alt && alt.length > 10) {
-              return true;
-            }
-
-            // Medium to large images are more likely to be main content
-            if (img.naturalWidth > 150 && img.naturalHeight > 100) {
-              return true;
-            }
-
-            // If image is reasonably sized but no other indicators, default to true
-            // This is more inclusive for content images
-            if (img.naturalWidth > 100 && img.naturalHeight > 75) {
-              return true;
+              current = current.parentElement;
             }
 
             return false;
           };
 
-          const images = Array.from(document.querySelectorAll('img')).map((img, index) => {
-            // Generate a unique selector for each image
-            const selector = img.id
-              ? `#${img.id}`
-              : img.className
-                ? `.${img.className.split(' ')[0]}`
-                : `img:nth-child(${index + 1})`;
+          // Helper: Calculate importance score based on image attributes
+          const calculateImportanceScore = (element: Element, isMain: boolean): number => {
+            let score = isMain ? 50 : 0;
 
-            // Determine if image is likely main content
-            const isMainContent = isMainContentImage(img);
+            // Size considerations
+            if (element instanceof HTMLImageElement) {
+              const width = element.naturalWidth || element.width;
+              const height = element.naturalHeight || element.height;
 
-            // Calculate image importance score for ranking
-            let importanceScore = 0;
+              // Prefer larger images
+              if (width > 300 && height > 200) score += 30;
+              else if (width > 150 && height > 100) score += 15;
 
-            // Size score (larger images are more important)
-            const area = img.naturalWidth * img.naturalHeight;
-            if (area > 500000)
-              importanceScore += 100; // Very large (e.g., 1000x500+)
-            else if (area > 200000)
-              importanceScore += 80; // Large (e.g., 600x400+)
-            else if (area > 50000)
-              importanceScore += 60; // Medium (e.g., 300x200+)
-            else if (area > 10000)
-              importanceScore += 30; // Small but reasonable
-            else importanceScore += 5; // Very small
-
-            // Content keywords bonus
-            const className = img.className.toLowerCase();
-            const contentKeywords = [
-              'entry-image',
-              'post-image',
-              'article-image',
-              'content-image',
-              'singular-image',
-              'featured-image',
-              'hero-image',
-              'main-image',
-            ];
-            if (contentKeywords.some(keyword => className.includes(keyword))) {
-              importanceScore += 50;
+              // Penalize tiny images (likely icons or tracking pixels)
+              if (width < 50 || height < 50) score -= 30;
             }
 
-            // Alt text quality bonus
-            const alt = img.alt || '';
-            if (alt.length > 20) importanceScore += 30;
-            else if (alt.length > 10) importanceScore += 20;
-            else if (alt.length > 0) importanceScore += 10;
-
-            // Position bonus (images higher on the page are more important)
-            const rect = img.getBoundingClientRect();
-            const scrollTop = window.scrollY || document.documentElement.scrollTop;
-            const absoluteTop = rect.top + scrollTop;
-            if (absoluteTop < 1000)
-              importanceScore += 40; // Above the fold
-            else if (absoluteTop < 2000)
-              importanceScore += 20; // Near top
-            else if (absoluteTop < 4000) importanceScore += 10; // Still fairly high
-
-            // Penalize obvious non-content images
-            const src = img.src.toLowerCase();
-            const adKeywords = ['banner', 'sponsor', 'promo', 'advertisement', '_ad_', 'logo'];
-            if (adKeywords.some(keyword => src.includes(keyword) || className.includes(keyword))) {
-              importanceScore -= 50;
+            // Check for hero/featured class names
+            const className = element.className?.toString().toLowerCase() || '';
+            if (
+              className.includes('hero') ||
+              className.includes('featured') ||
+              className.includes('main') ||
+              className.includes('primary')
+            ) {
+              score += 25;
             }
 
-            // Avatar/profile penalty
-            if (className.includes('avatar') || className.includes('profile')) {
-              importanceScore -= 30;
+            // Check if inside a figure tag (semantic indicator)
+            if (element.closest('figure')) {
+              score += 15;
             }
 
-            return {
-              imageUrl: img.src,
+            return Math.max(0, Math.min(100, score));
+          };
+
+          const images: BasicImageInfo[] = [];
+          const processedUrls = new Set<string>();
+
+          // Extract <img> elements
+          const imgElements = document.querySelectorAll('img');
+          imgElements.forEach(img => {
+            const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+
+            if (!src || !isValidImageUrl(src)) return;
+            if (processedUrls.has(src)) return;
+
+            processedUrls.add(src);
+
+            const isMain = isInMainContent(img);
+            const importanceScore = calculateImportanceScore(img, isMain);
+
+            images.push({
+              imageUrl: src,
               currentAlt: img.alt || '',
-              selector,
-              isMainContent,
+              selector: generateSelector(img),
+              isMainContent: isMain,
               importanceScore,
-            };
+            });
           });
 
-          // Sort by importance score (highest first) and limit to 15 images
-          const sortedImages = images.sort((a, b) => b.importanceScore - a.importanceScore).slice(0, 15);
+          // Extract CSS background images from div elements
+          const divElements = document.querySelectorAll('div');
+          divElements.forEach(div => {
+            const bgUrl = extractBackgroundImageUrl(div);
 
-          return sortedImages;
+            if (!bgUrl) return;
+            if (processedUrls.has(bgUrl)) return;
+
+            // Check minimum size for background image divs
+            const rect = div.getBoundingClientRect();
+            if (rect.width < 50 || rect.height < 50) return;
+
+            processedUrls.add(bgUrl);
+
+            const isMain = isInMainContent(div);
+            const importanceScore = calculateImportanceScore(div, isMain);
+
+            // Background images often have additional context in aria-label
+            const ariaLabel = div.getAttribute('aria-label') || '';
+
+            images.push({
+              imageUrl: bgUrl,
+              currentAlt: ariaLabel,
+              selector: generateSelector(div),
+              isMainContent: isMain,
+              importanceScore,
+            });
+          });
+
+          // Sort by importance score (descending)
+          images.sort((a, b) => b.importanceScore - a.importanceScore);
+
+          return images;
         },
       });
 
-      return results[0]?.result || [];
+      const images = results[0]?.result || [];
+      logger.info('Extracted images:', { count: images.length });
+
+      return images;
     } catch (error) {
       logger.error('Failed to extract images:', error);
       return [];
@@ -229,242 +273,299 @@ export class AccessibilityService {
   }
 
   /**
-   * Runs the enhanced accessibility pipeline with DOM and vision context
-   *
-   * @param tabId - Chrome tab ID
-   * @param url - Page URL
-   * @param images - Basic extracted images
-   * @param pageContent - Page text content for vision context
-   * @param pageTitle - Page title for vision context
-   * @returns Enhanced images with DOM and vision context, plus quality metrics
+   * Extract and validate page content
    */
-  private async runEnhancedPipeline(
-    tabId: number,
-    url: string,
-    images: BasicImageInfo[],
-    pageContent: string,
-    pageTitle: string,
-    useVision: boolean,
-  ): Promise<{ images: ContextualizedImageInfo[]; metrics: AnalysisQualityMetrics }> {
-    const startTime = Date.now();
+  private async extractPageContent(tabId: number) {
+    const readabilityResult = await this.readabilityService.extractContent(tabId);
+    if (!readabilityResult.success || !readabilityResult.article) {
+      throw new Error('Failed to extract page content');
+    }
+    return readabilityResult.article;
+  }
 
+  /**
+   * Retrieve and validate LLM configuration
+   */
+  private async getLLMConfiguration() {
+    const providerConfig = await llmProviderStore.getProvider(ProviderTypeEnum.OpenAI);
+    const modelConfig = await agentModelStore.getAgentModel(AgentNameEnum.Navigator);
+
+    if (!providerConfig?.apiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
+
+    if (!modelConfig) {
+      throw new Error('Navigator model configuration not found');
+    }
+
+    return { providerConfig, modelConfig };
+  }
+
+  /**
+   * Generate accessibility-focused page summary
+   */
+  private async generatePageSummary(
+    article: { title: string; textContent: string },
+    providerConfig: ProviderConfig,
+    modelConfig: ModelConfig,
+  ): Promise<string> {
+    const model = createChatModel(providerConfig, modelConfig);
+    const summaryPrompt = `Analyze the following web page content and provide a concise accessibility-focused summary (2-3 sentences) that describes the main purpose and key content of the page:
+
+Title: ${article.title}
+Content excerpt: ${article.textContent.substring(0, 1500)}...
+
+Provide a clear, descriptive summary suitable for screen reader users.`;
+
+    const summaryMessages = [new HumanMessage(summaryPrompt)];
+    const summaryResponse = await model.invoke(summaryMessages);
+    const pageSummary = summaryResponse.content.toString();
+
+    logger.info('Generated page summary');
+    return pageSummary;
+  }
+
+  /**
+   * Fetch image from page and convert to base64
+   */
+  private async fetchImageAsBase64(tabId: number, imageUrl: string, selector: string): Promise<string | null> {
     try {
-      logger.info('Starting enhanced accessibility pipeline');
+      logger.info('Fetching image as base64 from page:', { imageUrl: imageUrl.substring(0, 50) });
 
-      // Step 1: Enrich with DOM context
-      const domEnricher = new DOMContextEnricher();
-      const contextualizedImages = await domEnricher.enrichImagesWithDOMContext(tabId, url, images);
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (imageUrl: string, selector: string) => {
+          try {
+            // Try to find the image element first
+            const element = document.querySelector(selector);
 
-      // Step 2: Validate with vision (only if enabled)
-      let validatedImages = contextualizedImages;
-      if (useVision) {
-        const visionValidator = new VisionContextValidator(this.browserContext);
-        validatedImages = await visionValidator.validateImageContext(
-          tabId,
-          url,
-          pageTitle,
-          pageContent,
-          contextualizedImages,
-        );
-      } else {
-        logger.info('Vision validation skipped (useVision=false)');
+            if (element instanceof HTMLImageElement && element.complete) {
+              // Use canvas to convert image to base64
+              const canvas = document.createElement('canvas');
+              canvas.width = element.naturalWidth || element.width;
+              canvas.height = element.naturalHeight || element.height;
+
+              const ctx = canvas.getContext('2d');
+              if (!ctx) throw new Error('Could not get canvas context');
+
+              ctx.drawImage(element, 0, 0);
+
+              // Convert to base64 (try JPEG first, fall back to PNG)
+              try {
+                return canvas.toDataURL('image/jpeg', 0.9);
+              } catch {
+                return canvas.toDataURL('image/png');
+              }
+            }
+
+            // Fallback: fetch the image URL directly from the page context
+            const response = await fetch(imageUrl);
+            if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+
+            const blob = await response.blob();
+            return new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (error) {
+            console.error('[AccessibilityService] Failed to fetch image as base64:', error);
+            return null;
+          }
+        },
+        args: [imageUrl, selector],
+      });
+
+      const base64Data = results[0]?.result;
+      if (base64Data) {
+        logger.info('Successfully converted image to base64');
+        return base64Data;
       }
 
-      // Step 3: Apply hybrid scoring and select top images
-      const scorer = new HybridImageScorer();
-      const topImages = scorer.selectTopImages(validatedImages, 8);
-
-      // Calculate metrics
-      const processingTime = Date.now() - startTime;
-      const visionEnabledCount = validatedImages.filter(img => img.visionContext).length;
-      const relevantCount = validatedImages.filter(img => img.visionContext?.isRelevant).length;
-
-      const metrics: AnalysisQualityMetrics = {
-        originalImagesCount: images.length,
-        contextualizedCount: contextualizedImages.length,
-        validatedCount: visionEnabledCount,
-        finalTopImages: topImages.length,
-        visionEnabled: visionEnabledCount > 0,
-        tokensEstimate: this.estimateTokens(pageContent, topImages),
-        processingTime,
-        imageRelevanceRate: visionEnabledCount > 0 ? relevantCount / visionEnabledCount : 1.0,
-        qualityLevel: this.determineQualityLevel(visionEnabledCount, topImages.length),
-      };
-
-      logger.info('Enhanced pipeline completed', metrics);
-
-      return { images: topImages, metrics };
+      return null;
     } catch (error) {
-      logger.error('Enhanced pipeline failed, falling back to basic images:', error);
-
-      // Graceful fallback: convert basic images to ContextualizedImageInfo format
-      const fallbackImages: ContextualizedImageInfo[] = images.slice(0, 8).map(img => ({
-        imageUrl: img.imageUrl,
-        currentAlt: img.currentAlt,
-        selector: img.selector || '',
-        isMainContent: img.isMainContent || false,
-        importanceScore: img.importanceScore || 0,
-        domContext: {
-          isInMainContent: img.isMainContent || false,
-          isInViewport: false,
-          isInteractive: false,
-          parentContext: '',
-          semanticArea: SemanticArea.UNKNOWN,
-          hierarchyLevel: 0,
-          surroundingText: '',
-        },
-      }));
-
-      const metrics: AnalysisQualityMetrics = {
-        originalImagesCount: images.length,
-        contextualizedCount: 0,
-        validatedCount: 0,
-        finalTopImages: fallbackImages.length,
-        visionEnabled: false,
-        tokensEstimate: this.estimateTokens(pageContent, fallbackImages),
-        processingTime: Date.now() - startTime,
-        imageRelevanceRate: 0,
-        qualityLevel: 'low',
-      };
-
-      return { images: fallbackImages, metrics };
+      logger.error('Failed to fetch image as base64:', error);
+      return null;
     }
   }
 
   /**
-   * Estimates token count for the analysis
+   * Generate alt text for a single image using vision model
    */
-  private estimateTokens(content: string, images: ContextualizedImageInfo[]): number {
-    const contentTokens = Math.ceil(content.length / 4);
-    const imageTokens = images.length * 50;
-    return contentTokens + imageTokens;
+  private async generateAltTextForImage(
+    tabId: number,
+    image: BasicImageInfo,
+    providerConfig: ProviderConfig,
+    modelConfig: ModelConfig,
+  ): Promise<{ imageUrl: string; currentAlt: string; generatedAlt?: string }> {
+    try {
+      const visionModel = createChatModel(providerConfig, modelConfig);
+
+      // Try with direct URL first
+      let visionMessages = [
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'Generate a concise, descriptive alt text (1-2 sentences) for this image that would be useful for accessibility purposes. Focus on what is visually important and relevant to the page content. Do not include phrases like "image of" or "picture of".',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: image.imageUrl,
+              },
+            },
+          ],
+        }),
+      ];
+
+      try {
+        const visionResponse = await visionModel.invoke(visionMessages);
+        const generatedAlt = visionResponse.content.toString().trim();
+
+        await this.applyAltTextToDOM(tabId, image.selector, generatedAlt);
+
+        logger.info('Generated alt text for image:', {
+          imageUrl: image.imageUrl.substring(0, 50),
+          altLength: generatedAlt.length,
+        });
+
+        return {
+          imageUrl: image.imageUrl,
+          currentAlt: image.currentAlt,
+          generatedAlt,
+        };
+      } catch (error) {
+        // Check if it's a 400 error (BadRequestError) indicating image download failure
+        const is400Error =
+          error instanceof Error &&
+          (error.message.includes('400') ||
+            error.message.includes('BadRequestError') ||
+            error.message.includes('Error while downloading'));
+
+        if (is400Error) {
+          logger.warning('Image URL blocked by server, attempting base64 conversion:', {
+            imageUrl: image.imageUrl.substring(0, 50),
+          });
+
+          // Try to fetch the image as base64 from the page context
+          const base64Image = await this.fetchImageAsBase64(tabId, image.imageUrl, image.selector);
+
+          if (base64Image) {
+            logger.info('Retrying with base64 image');
+
+            // Retry with base64 data URL
+            visionMessages = [
+              new HumanMessage({
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Generate a concise, descriptive alt text (1-2 sentences) for this image that would be useful for accessibility purposes. Focus on what is visually important and relevant to the page content. Do not include phrases like "image of" or "picture of".',
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: base64Image,
+                    },
+                  },
+                ],
+              }),
+            ];
+
+            const visionResponse = await visionModel.invoke(visionMessages);
+            const generatedAlt = visionResponse.content.toString().trim();
+
+            await this.applyAltTextToDOM(tabId, image.selector, generatedAlt);
+
+            logger.info('Generated alt text for image using base64:', {
+              imageUrl: image.imageUrl.substring(0, 50),
+              altLength: generatedAlt.length,
+            });
+
+            return {
+              imageUrl: image.imageUrl,
+              currentAlt: image.currentAlt,
+              generatedAlt,
+            };
+          } else {
+            logger.error('Failed to convert image to base64, skipping image');
+          }
+        }
+
+        // Re-throw if not a 400 error or base64 conversion failed
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to generate alt text for image:', {
+        imageUrl: image.imageUrl.substring(0, 50),
+        error,
+      });
+
+      return {
+        imageUrl: image.imageUrl,
+        currentAlt: image.currentAlt,
+        generatedAlt: undefined,
+      };
+    }
   }
 
   /**
-   * Determines quality level based on vision validation and image count
+   * Analyze all images and generate alt text
    */
-  private determineQualityLevel(visionValidatedCount: number, finalImageCount: number): 'high' | 'medium' | 'low' {
-    if (visionValidatedCount > 0 && finalImageCount >= 5) return 'high';
-    if (finalImageCount >= 3) return 'medium';
-    return 'low';
+  private async analyzeImages(
+    tabId: number,
+    images: BasicImageInfo[],
+    providerConfig: ProviderConfig,
+    modelConfig: ModelConfig,
+  ): Promise<Array<{ imageUrl: string; currentAlt: string; generatedAlt?: string }>> {
+    const imageAnalysisPromises = images.map(image =>
+      this.generateAltTextForImage(tabId, image, providerConfig, modelConfig),
+    );
+
+    const imageAnalysis = await Promise.all(imageAnalysisPromises);
+
+    logger.info('Completed image analysis:', {
+      imagesAnalyzed: imageAnalysis.filter(img => img.generatedAlt).length,
+      totalImages: imageAnalysis.length,
+    });
+
+    return imageAnalysis;
   }
 
   /**
-   * Perform accessibility analysis using direct LLM call
+   * Perform accessibility analysis using direct LLM call (orchestrator method)
    */
   async analyzeAccessibility(tabId: number, url: string): Promise<AccessibilityAnalysisResult> {
     try {
-      logger.info('Starting accessibility analysis for tab:', tabId);
+      logger.info('Starting accessibility analysis for tab:', tabId, url);
 
-      // Extract page content using our ReadabilityService
-      const readabilityResult = await this.readabilityService.extractContent(tabId);
-
-      if (!readabilityResult.success || !readabilityResult.article) {
-        throw new Error('Failed to extract page content: ' + (readabilityResult.error || 'Unknown error'));
-      }
-
-      const readabilityContent = readabilityResult.article;
-
-      // Get useVision setting
-      const generalSettings = await generalSettingsStore.getSettings();
-      const useVision = generalSettings.useVision;
-
-      logger.info('Starting accessibility analysis with useVision:', useVision);
+      // Extract page content
+      const article = await this.extractPageContent(tabId);
 
       // Extract images from the page
       const images = await this.extractImages(tabId);
+      logger.info('Extracted images for analysis:', { count: images.length });
 
-      // Run enhanced pipeline with DOM and vision context
-      const { images: enhancedImages, metrics } = await this.runEnhancedPipeline(
-        tabId,
-        url,
-        images,
-        readabilityContent.textContent,
-        readabilityContent.title,
-        useVision,
-      );
+      // Get LLM configuration
+      const { providerConfig, modelConfig } = await this.getLLMConfiguration();
 
-      logger.info('Enhanced images:', enhancedImages.length, 'metrics:', metrics);
+      // Generate page summary
+      const pageSummary = await this.generatePageSummary(article, providerConfig, modelConfig);
 
-      // Set up the LLM - use Navigator model configuration
-      const providers = await llmProviderStore.getAllProviders();
-      // if no providers, need to display the options page
-      if (Object.keys(providers).length === 0) {
-        throw new Error(t('bg_setup_noApiKeys'));
-      }
+      // Analyze images and generate alt text
+      const imageAnalysis = await this.analyzeImages(tabId, images, providerConfig, modelConfig);
 
-      // Clean up any legacy validator settings for backward compatibility
-      await agentModelStore.cleanupLegacyValidatorSettings();
-
-      const agentModels = await agentModelStore.getAllAgentModels();
-      // verify if every provider used in the agent models exists in the providers
-      for (const agentModel of Object.values(agentModels)) {
-        if (!providers[agentModel.provider]) {
-          throw new Error(t('bg_setup_noProvider', [agentModel.provider]));
-        }
-      }
-
-      const navigatorModel = agentModels[AgentNameEnum.Navigator];
-      if (!navigatorModel) {
-        throw new Error(t('bg_setup_noNavigatorModel'));
-      }
-
-      const navigatorProviderConfig = providers[navigatorModel.provider];
-      if (!navigatorProviderConfig) {
-        throw new Error(`Provider ${navigatorModel.provider} not found`);
-      }
-
-      const chatModel = createChatModel(navigatorProviderConfig, navigatorModel);
-
-      // Create system and user messages
-      const systemMessage = new SystemMessage(`You are an accessibility expert. Your task is to:
-1. Generate a clear, concise summary of the web page content for users with visual impairments
-2. Create improved alt text for images that are meaningful content (not decorative or advertisements)
-
-Focus on making content accessible and understandable. Be concise but informative.
-
-Return your response as JSON with this exact structure:
-{
-  "pageSummary": "Clear summary of the page's main content and purpose",
-  "imageAnalysis": [
-    {
-      "imageUrl": "url of the image",
-      "currentAlt": "current alt text",
-      "generatedAlt": "improved alt text description"
-    }
-  ]
-}`);
-
-      // Use enhanced prompt with DOM and vision context
-      const userPrompt = this.buildEnhancedAnalysisPrompt({
-        title: readabilityContent.title,
-        content: readabilityContent.textContent,
-        url,
-        images: enhancedImages,
-        siteName: readabilityContent.siteName || undefined,
-        byline: readabilityContent.byline || undefined,
+      logger.info('Completed accessibility analysis:', {
+        pageSummaryLength: pageSummary.length,
+        imagesAnalyzed: imageAnalysis.filter(img => img.generatedAlt).length,
+        totalImages: imageAnalysis.length,
       });
 
-      const userMessage = new HumanMessage(userPrompt);
-
-      // Call the LLM directly
-      const response = await chatModel.invoke([systemMessage, userMessage]);
-
-      // Parse the response
-      let analysisResult: AccessibilityAnalysisResult;
-      try {
-        const responseText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-        // Extract JSON from the response if it's wrapped in markdown or other text
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : responseText;
-        analysisResult = JSON.parse(jsonStr);
-      } catch (parseError) {
-        logger.error('Failed to parse LLM response:', parseError);
-        throw new Error('Failed to parse accessibility analysis response');
-      }
-
-      logger.info('Accessibility analysis completed successfully');
-      return analysisResult;
+      return {
+        pageSummary,
+        imageAnalysis,
+      };
     } catch (error) {
       logger.error('Accessibility analysis failed:', error);
       throw error;
@@ -472,181 +573,34 @@ Return your response as JSON with this exact structure:
   }
 
   /**
-   * Groups images by their semantic area
+   * Apply generated alt text to DOM element
    */
-  private groupImagesBySemanticArea(images: ContextualizedImageInfo[]): Map<SemanticArea, ContextualizedImageInfo[]> {
-    const grouped = new Map<SemanticArea, ContextualizedImageInfo[]>();
-
-    for (const image of images) {
-      const area = image.domContext.semanticArea;
-      if (!grouped.has(area)) {
-        grouped.set(area, []);
-      }
-      grouped.get(area)!.push(image);
+  private async applyAltTextToDOM(tabId: number, selector: string, altText: string): Promise<void> {
+    try {
+      logger.info('Applying alt text to DOM:', { selector, altText });
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (selector: string, altText: string) => {
+          try {
+            const element = document.querySelector(selector);
+            if (element) {
+              if (element instanceof HTMLImageElement) {
+                element.alt = `AI Generated: ${altText}`;
+              } else {
+                element.setAttribute('aria-label', `AI Generated: ${altText}` || altText);
+              }
+            } else {
+              throw Error('Element not found');
+            }
+          } catch (error) {
+            logger.error('[AccessibilityService] Failed to apply alt text:', error);
+          }
+        },
+        args: [selector, altText],
+      });
+      logger.info('Alt text application script executed successfully');
+    } catch (error) {
+      logger.error('Failed to apply alt text to DOM:', { selector, error });
     }
-
-    return grouped;
-  }
-
-  /**
-   * Builds structural context summary for the page
-   */
-  private buildStructuralContext(images: ContextualizedImageInfo[]): string {
-    const grouped = this.groupImagesBySemanticArea(images);
-    const areas: string[] = [];
-
-    for (const [area, imgs] of grouped.entries()) {
-      areas.push(`- ${area}: ${imgs.length} image(s)`);
-    }
-
-    return areas.join('\n');
-  }
-
-  /**
-   * Infers page type based on image distribution and content
-   */
-  private inferPageType(images: ContextualizedImageInfo[]): string {
-    const mainContentImages = images.filter(img => img.domContext.isInMainContent);
-    const totalImages = images.length;
-
-    if (totalImages === 0) return 'Text-only Article';
-    if (mainContentImages.length >= 5) return 'Product/Gallery Page';
-    if (mainContentImages.length >= 2) return 'Illustrated Article';
-    return 'Mixed Content Page';
-  }
-
-  /**
-   * Formats images with full DOM and vision context
-   */
-  private formatImagesWithContext(images: ContextualizedImageInfo[]): string {
-    return images
-      .map((img, index) => {
-        const parts = [
-          `${index + 1}. Image URL: ${img.imageUrl}`,
-          `   Current Alt: "${img.currentAlt}"`,
-          `   Location: ${img.domContext.semanticArea}${img.domContext.isInMainContent ? ' (main content)' : ''}`,
-          `   Hierarchy Level: ${img.domContext.hierarchyLevel}`,
-        ];
-
-        if (img.domContext.surroundingText) {
-          parts.push(`   Surrounding Text: "${img.domContext.surroundingText}"`);
-        }
-
-        if (img.visionContext) {
-          parts.push(`   Visual Description: "${img.visionContext.visualDescription}"`);
-          parts.push(
-            `   Relevance: ${img.visionContext.isRelevant ? 'Relevant' : 'Not relevant'} (${(img.visionContext.relevanceScore * 100).toFixed(0)}%)`,
-          );
-          parts.push(`   Reason: ${img.visionContext.relevanceReason}`);
-        }
-
-        if (img.finalScore !== undefined) {
-          parts.push(`   Final Score: ${img.finalScore}`);
-        }
-
-        return parts.join('\n');
-      })
-      .join('\n\n');
-  }
-
-  /**
-   * Builds enhanced analysis prompt with DOM and vision context
-   */
-  private buildEnhancedAnalysisPrompt(context: {
-    title: string;
-    content: string;
-    url: string;
-    images: ContextualizedImageInfo[];
-    siteName?: string;
-    byline?: string;
-  }): string {
-    const pageType = this.inferPageType(context.images);
-    const structuralContext = this.buildStructuralContext(context.images);
-    const mainContentImages = context.images.filter(img => img.domContext.isInMainContent);
-    const otherImages = context.images.filter(img => !img.domContext.isInMainContent);
-
-    return `
-Please analyze this web page for accessibility improvements:
-
-# PAGE INFORMATION
-- Title: ${context.title}
-- URL: ${context.url}
-- Site: ${context.siteName || 'Unknown'}
-${context.byline ? `- Author: ${context.byline}` : ''}
-- Inferred Page Type: ${pageType}
-
-# MAIN CONTENT
-${context.content.substring(0, 4000)}${context.content.length > 4000 ? '...' : ''}
-
-# STRUCTURAL CONTEXT
-Image distribution by semantic area:
-${structuralContext}
-
-# IMAGES FOR ACCESSIBILITY ANALYSIS
-
-## Main Content Images (${mainContentImages.length} images)
-${mainContentImages.length > 0 ? this.formatImagesWithContext(mainContentImages) : 'No main content images detected'}
-
-${otherImages.length > 0 ? `## Other Relevant Images (${otherImages.length} images)\n${this.formatImagesWithContext(otherImages)}` : ''}
-
-# YOUR TASK
-1. **PAGE SUMMARY** (200-300 words): Create a comprehensive, accessible summary of the page's main content and purpose for users with visual impairments.
-
-2. **IMAGE ALT TEXT**: Generate improved alt text for each image above that:
-   - Describes what's in the image accurately
-   - Explains its relevance to the surrounding content
-   - Is concise but informative (50-150 characters)
-   - Begins with "Generated by VisibleAI: "
-   - Takes into account the visual description and context provided
-
-3. **ACCESSIBILITY INSIGHTS**: Note any patterns or issues in the current accessibility state.
-
-Return only the JSON response as specified in the system message.
-`;
-  }
-
-  /**
-   * Legacy analysis prompt builder (kept for reference)
-   * @deprecated Use buildEnhancedAnalysisPrompt instead
-   */
-  private buildAnalysisPrompt(context: {
-    title: string;
-    content: string;
-    url: string;
-    images: BasicImageInfo[];
-    siteName?: string;
-    byline?: string;
-  }): string {
-    return `
-Please analyze this web page for accessibility improvements:
-
-PAGE DETAILS:
-- Title: ${context.title}
-- URL: ${context.url}
-- Site: ${context.siteName || 'Unknown'}
-
-MAIN CONTENT:
-${context.content.substring(0, 4000)} ${context.content.length > 4000 ? '...' : ''}
-
-IMAGES TO ANALYZE (${context.images.length} images):
-${context.images
-  .map(
-    (img, index) => `
-${index + 1}. Image URL: ${img.imageUrl}
-   Current Alt: "${img.currentAlt}"
-`,
-  )
-  .join('')}
-
-Task:
-1. Create a concise summary of the page's main purpose and content (focus on what users need to know)
-2. Generate improved alt text for each image listed above that:
-   - Describes what's in the image
-   - Explains its relevance to the content
-   - Is concise but informative (50-125 characters)
-   - At the begginning of the alt text ALWAYS add "Generated by VisibleAI:
-
-Return only the JSON response as specified in the system message.
-`;
   }
 }
