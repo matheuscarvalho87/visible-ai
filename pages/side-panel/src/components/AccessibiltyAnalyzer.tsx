@@ -38,20 +38,23 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
   return (
     <div style={{ fontSize: `${fontSize}%` }} className={`h-full overflow-y-auto px-4`}>
       {/* Analysis Button */}
-      {!currentPageData.pageSummary && (
-        <div className="mb-4">
-          <button
-            onClick={onHandleStarBasicAnalysis}
-            disabled={isAnalyzing}
-            className={`w-full rounded-lg p-3 transition-all ${
-              isDarkMode
-                ? 'bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-800'
-                : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-blue-300'
-            } disabled:cursor-not-allowed`}>
-            {isAnalyzing ? 'Analyzing...' : 'Improve Accessibility'}
-          </button>
-        </div>
-      )}
+      <div className="mb-4">
+        <button
+          onClick={onHandleStarBasicAnalysis}
+          disabled={isAnalyzing}
+          className={`w-full rounded-lg p-3 transition-all ${
+            isDarkMode
+              ? 'bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-800'
+              : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-blue-300'
+          } disabled:cursor-not-allowed`}
+          title="Keyboard shortcut: Alt+Shift+A">
+          {isAnalyzing
+            ? 'Analyzing...'
+            : currentPageData.pageSummary
+              ? 'Re-analyze Accessibility (Alt+Shift+A)'
+              : 'Improve Accessibility (Alt+Shift+A)'}
+        </button>
+      </div>
       {/* Live Analysis Result */}
       {currentPageData.pageSummary && (
         <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>

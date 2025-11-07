@@ -94,6 +94,20 @@ const manifest = withOperaSidebar(
         matches: ['*://*/*'],
       },
     ],
+    commands: {
+      'analyze-accessibility': {
+        suggested_key: {
+          default: 'Alt+Shift+A',
+        },
+        description: 'Analyze page accessibility',
+      },
+      'toggle-readability': {
+        suggested_key: {
+          default: 'Alt+Shift+R',
+        },
+        description: 'Toggle readability mode',
+      },
+    },
   }),
 );
 

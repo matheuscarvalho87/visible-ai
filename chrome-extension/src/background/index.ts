@@ -33,6 +33,87 @@ const readabilityService = new ReadabilityService();
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
 
+// Listen for keyboard shortcuts
+chrome.commands.onCommand.addListener(async command => {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+
+    if (!tabId) {
+      logger.error('No active tab found for keyboard shortcut');
+      return;
+    }
+
+    switch (command) {
+      case 'analyze-accessibility': {
+        logger.info('Keyboard shortcut triggered: analyze-accessibility');
+
+        // Send start message to side panel if connected
+        if (currentPort) {
+          currentPort.postMessage({
+            type: 'accessibility_analysis_start',
+          });
+        }
+
+        // Use local accessibility service
+        const analysisResult = await accessibilityService.analyzeAccessibility(tabId, tabs[0].url || '');
+
+        if (!analysisResult) {
+          throw new Error('Analysis returned no result');
+        }
+
+        // Send completion message to side panel if connected
+        if (currentPort) {
+          currentPort.postMessage({
+            type: 'accessibility_analysis_complete',
+            report: {
+              pageSummary: analysisResult.pageSummary,
+            },
+            imageAnalysis: analysisResult.imageAnalysis,
+          });
+        }
+        break;
+      }
+
+      case 'toggle-readability': {
+        logger.info('Keyboard shortcut triggered: toggle-readability');
+
+        // Extract content using readability service
+        const result = await readabilityService.extractContent(tabId);
+
+        if (!result.success || !result.article) {
+          throw new Error(result.error || 'Failed to extract content');
+        }
+
+        // Send message to content script to toggle readability mode
+        try {
+          const response = await chrome.tabs.sendMessage(tabId, {
+            type: 'toggle_readability_mode',
+            article: result.article,
+          });
+
+          // Send message to side panel if connected
+          if (currentPort) {
+            currentPort.postMessage({
+              type: 'readability_mode_toggled',
+              active: response.active,
+            });
+          }
+        } catch (contentScriptError) {
+          logger.error('Content script not responding');
+          throw new Error('Content script not available. Please refresh the page and try again.');
+        }
+        break;
+      }
+
+      default:
+        logger.info('Unknown command:', command);
+    }
+  } catch (error) {
+    logger.error('Error handling keyboard shortcut:', error);
+  }
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (tabId && changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
     await injectBuildDomTreeScripts(tabId);

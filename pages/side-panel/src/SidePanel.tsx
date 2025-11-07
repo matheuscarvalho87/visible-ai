@@ -381,9 +381,15 @@ const SidePanel = () => {
           setIsProcessingSpeech(false);
         } else if (message && message.type === 'heartbeat_ack') {
           console.log('Heartbeat acknowledged');
+        } else if (message && message.type === 'accessibility_analysis_start') {
+          // Handle accessibility analysis start (from keyboard shortcut)
+          console.log('[SidePanel] Received accessibility_analysis_start');
+          setIsAnalyzing(true);
         } else if (message && message.type === 'accessibility_analysis_complete') {
           // Handle accessibility analysis completion
-          console.log('Accessibility analysis completed:', message.report);
+          console.log('[SidePanel] Received accessibility_analysis_complete:', message);
+          console.log('[SidePanel] Report:', message.report);
+          console.log('[SidePanel] Image analysis:', message.imageAnalysis);
           setIsAnalyzing(false);
 
           // Get current tab URL to ensure we use the correct URL
@@ -406,17 +412,20 @@ const SidePanel = () => {
               updatedAt: Date.now(),
             };
 
-            setCurrentPageData(prev =>
-              prev
-                ? {
-                    ...prev,
-                    pageUrl: currentUrl,
-                    pageSummary: message.report?.pageSummary || 'Analysis completed',
-                    imageAnalysis: message.imageAnalysis || [],
-                    updatedAt: report.updatedAt,
-                  }
-                : prev,
-            );
+            setCurrentPageData(prev => {
+              // Always update, even if prev is null
+              const newData = {
+                id: prev?.id || crypto.randomUUID(),
+                pageUrl: currentUrl,
+                pageSummary: message.report?.pageSummary || 'Analysis completed',
+                imageAnalysis: message.imageAnalysis || [],
+                readabilityMode: prev?.readabilityMode,
+                updatedAt: report.updatedAt,
+                createdAt: prev?.createdAt || Date.now(),
+              };
+              console.log('[SidePanel] Updating currentPageData:', newData);
+              return newData;
+            });
 
             // Save the report to storage if we have page data
             if (message.report) {
@@ -1194,8 +1203,11 @@ const SidePanel = () => {
                   disabled={!currentPageData}
                   className={`w-full rounded-lg p-3 text-white transition-all disabled:cursor-not-allowed disabled:bg-blue-300 ${
                     currentPageData?.readabilityMode ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-500 hover:bg-blue-600'
-                  }`}>
-                  {currentPageData?.readabilityMode ? 'Exit Reader View' : 'Improve Readability'}
+                  }`}
+                  title="Keyboard shortcut: Alt+Shift+R">
+                  {currentPageData?.readabilityMode
+                    ? 'Exit Reader View (Alt+Shift+R)'
+                    : 'Improve Readability (Alt+Shift+R)'}
                 </button>
               </div>
             </div>
