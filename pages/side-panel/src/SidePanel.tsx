@@ -1182,7 +1182,7 @@ const SidePanel = () => {
           </div>
         ) : (
           <>
-            <div className="flex-1 pt-4 overflow-y-auto">
+            <div className="py-4 overflow-y-auto">
               {/* Show accessibility analyzer when activated */}
               <div>
                 <AccessibilityAnalyzer
@@ -1197,7 +1197,7 @@ const SidePanel = () => {
               </div>
 
               {/* Show Readability Button */}
-              <div className="h-full overflow-y-auto px-4">
+              <div className="overflow-y-auto px-4">
                 <button
                   onClick={handleImproveReadability}
                   disabled={!currentPageData}
@@ -1217,7 +1217,7 @@ const SidePanel = () => {
               <>
                 {messages.length === 0 && (
                   <>
-                    <div className="border-t border-gray-200 mb-2 p-2 shadow-sm bg-white">
+                    <div className="absolute bottom-0 w-full border-gray-200 mb-2 p-2 shadow-sm bg-white">
                       <ChatInput
                         onSendMessage={handleSendMessage}
                         onStopTask={handleStopTask}
@@ -1237,7 +1237,7 @@ const SidePanel = () => {
                   </>
                 )}
                 {messages.length > 0 && (
-                  <div className="scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 bg-white">
+                  <div className="flex-1 scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 bg-white">
                     <MessageList messages={messages} isDarkMode={false} />
                     <div ref={messagesEndRef} />
                   </div>
