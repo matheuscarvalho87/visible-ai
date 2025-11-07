@@ -72,9 +72,11 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
                 key={index}
                 className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
                 <img
+                  width={(200 * fontSize) / 100}
+                  height={(200 * fontSize) / 100}
                   src={image.imageUrl}
                   alt={image.currentAlt || 'Image'}
-                  className="mb-2 size-16 rounded object-cover"
+                  className="mb-2 rounded object-cover"
                   onError={e => {
                     (e.target as HTMLImageElement).style.display = 'none';
                   }}
