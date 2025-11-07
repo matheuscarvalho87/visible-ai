@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiSettings, FiEye } from 'react-icons/fi';
+import { FiSettings } from 'react-icons/fi';
 import {
   type AccessibilityReport,
   type Message,
@@ -10,12 +10,11 @@ import {
   generalSettingsStore,
   accessibilityStore,
 } from '@extension/storage';
-import favoritesStorage, { type FavoritePrompt } from '@extension/storage/lib/prompt/favorites';
+import favoritesStorage from '@extension/storage/lib/prompt/favorites';
 import { t } from '@extension/i18n';
 import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
-import BookmarkList from './components/BookmarkList';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 import AccessibilityAnalyzer from './components/AccessibiltyAnalyzer';
@@ -29,6 +28,7 @@ export interface CurrentPageDataProps {
     currentAlt: string;
     generatedAlt?: string;
   }[];
+  readabilityMode?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -40,7 +40,6 @@ const SidePanel = () => {
   const [showStopButton, setShowStopButton] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [showAccessibilityAnalyzer, setShowAccessibilityAnalyzer] = useState(false);
   const [currentPageData, setCurrentPageData] = useState<CurrentPageDataProps | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   // const [accessibilityResult, setAccessibilityResult] = useState<string | null>(null);
@@ -69,7 +68,6 @@ const SidePanel = () => {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
   const [isFollowUpMode, setIsFollowUpMode] = useState(false);
   const [isHistoricalSession, setIsHistoricalSession] = useState(false);
-  const [favoritePrompts, setFavoritePrompts] = useState<FavoritePrompt[]>([]);
   const [hasConfiguredModels, setHasConfiguredModels] = useState<boolean | null>(null); // null = loading, false = no models, true = has models
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
@@ -433,6 +431,25 @@ const SidePanel = () => {
             timestamp: Date.now(),
           });
           setIsAnalyzing(false);
+        } else if (message && message.type === 'readability_mode_toggled') {
+          // Handle readability mode toggle success
+          console.log('Readability mode toggled:', message.active);
+          setCurrentPageData(prev =>
+            prev
+              ? {
+                  ...prev,
+                  readabilityMode: message.active,
+                  updatedAt: Date.now(),
+                }
+              : prev,
+          );
+        } else if (message && message.type === 'readability_mode_error') {
+          // Handle readability mode error
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: `Readability mode error: ${message.error || 'Unknown error'}`,
+            timestamp: Date.now(),
+          });
         }
       });
 
@@ -759,26 +776,19 @@ const SidePanel = () => {
     setShowStopButton(false);
   };
 
-  const handleNewChat = () => {
-    // Clear messages and start a new chat
-    setMessages([]);
-    setCurrentSessionId(null);
-    sessionIdRef.current = null;
-    setInputEnabled(true);
-    setShowStopButton(false);
-    setIsFollowUpMode(false);
-    setIsHistoricalSession(false);
-    setShowAccessibilityAnalyzer(false);
-    // setAccessibilityResult(null);
-
-    // Disconnect any existing connection
-    stopConnection();
-  };
-
-  const handleShowAnalyzeAccessibility = async () => {
-    await updateCurrentPageData();
-    setShowAccessibilityAnalyzer(true);
-  };
+  // const handleNewChat = () => {
+  //   // Clear messages and start a new chat
+  //   setMessages([]);
+  //   setCurrentSessionId(null);
+  //   sessionIdRef.current = null;
+  //   setInputEnabled(true);
+  //   setShowStopButton(false);
+  //   setIsFollowUpMode(false);
+  //   setIsHistoricalSession(false);
+  //   // setAccessibilityResult(null);
+  //   // Disconnect any existing connection
+  //   stopConnection();
+  // };
 
   const loadChatSessions = useCallback(async () => {
     try {
@@ -849,10 +859,6 @@ const SidePanel = () => {
         // Add to favorites storage
         await favoritesStorage.addPrompt(title, taskContent);
 
-        // Update favorites in the UI
-        const prompts = await favoritesStorage.getAllPrompts();
-        setFavoritePrompts(prompts);
-
         // Return to chat view after pinning
         handleBackToChat(true);
       }
@@ -860,63 +866,6 @@ const SidePanel = () => {
       console.error('Failed to pin session to favorites:', error);
     }
   };
-
-  const handleBookmarkSelect = (content: string) => {
-    if (setInputTextRef.current) {
-      setInputTextRef.current(content);
-    }
-  };
-
-  const handleBookmarkUpdateTitle = async (id: number, title: string) => {
-    try {
-      await favoritesStorage.updatePromptTitle(id, title);
-
-      // Update favorites in the UI
-      const prompts = await favoritesStorage.getAllPrompts();
-      setFavoritePrompts(prompts);
-    } catch (error) {
-      console.error('Failed to update favorite prompt title:', error);
-    }
-  };
-
-  const handleBookmarkDelete = async (id: number) => {
-    try {
-      await favoritesStorage.removePrompt(id);
-
-      // Update favorites in the UI
-      const prompts = await favoritesStorage.getAllPrompts();
-      setFavoritePrompts(prompts);
-    } catch (error) {
-      console.error('Failed to delete favorite prompt:', error);
-    }
-  };
-
-  const handleBookmarkReorder = async (draggedId: number, targetId: number) => {
-    try {
-      // Directly pass IDs to storage function - it now handles the reordering logic
-      await favoritesStorage.reorderPrompts(draggedId, targetId);
-
-      // Fetch the updated list from storage to get the new IDs and reflect the authoritative order
-      const updatedPromptsFromStorage = await favoritesStorage.getAllPrompts();
-      setFavoritePrompts(updatedPromptsFromStorage);
-    } catch (error) {
-      console.error('Failed to reorder favorite prompts:', error);
-    }
-  };
-
-  // Load favorite prompts from storage
-  useEffect(() => {
-    const loadFavorites = async () => {
-      try {
-        const prompts = await favoritesStorage.getAllPrompts();
-        setFavoritePrompts(prompts);
-      } catch (error) {
-        console.error('Failed to load favorite prompts:', error);
-      }
-    };
-
-    loadFavorites();
-  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1139,6 +1088,38 @@ const SidePanel = () => {
     }
   };
 
+  const handleImproveReadability = async (): Promise<void> => {
+    if (!currentPageData) return;
+
+    try {
+      console.log('Toggling readability mode for', currentPageData.pageUrl);
+
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs[0]?.id;
+      if (!tabId) {
+        throw new Error('No active tab found');
+      }
+
+      // Setup connection if not exists
+      if (!portRef.current) {
+        setupConnection();
+      }
+
+      // Send message to background script to toggle readability mode
+      sendMessage({
+        type: 'toggle_readability_mode',
+        tabId: tabId,
+      });
+    } catch (error) {
+      console.error('Error toggling readability mode:', error);
+      appendMessage({
+        actor: Actors.SYSTEM,
+        content: `Error toggling readability mode: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: Date.now(),
+      });
+    }
+  };
+
   return (
     <div>
       <div className="flex h-screen flex-col bg-white overflow-hidden border border-gray-300 rounded-2xl">
@@ -1159,15 +1140,6 @@ const SidePanel = () => {
           <div className="header-icons">
             <button
               type="button"
-              onClick={handleShowAnalyzeAccessibility}
-              onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-              className="header-icon text-gray-900 hover:text-gray-700 cursor-pointer"
-              aria-label="Check accessibility"
-              tabIndex={0}>
-              <FiEye size={20} />
-            </button>
-            <button
-              type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
               onKeyDown={e => e.key === 'Enter' && chrome.runtime.openOptionsPage()}
               className="header-icon text-gray-900 hover:text-gray-700 cursor-pointer"
@@ -1178,7 +1150,7 @@ const SidePanel = () => {
           </div>
         </header>
         {showHistory ? (
-          <div className="flex-1 overflow-hidden">
+          <div>
             <ChatHistoryList
               sessions={chatSessions}
               onSessionSelect={handleSessionSelect}
@@ -1190,45 +1162,31 @@ const SidePanel = () => {
           </div>
         ) : (
           <>
-            {/* Show loading state while checking model configuration */}
-            {hasConfiguredModels === null && (
-              <div className="flex flex-1 items-center justify-center p-8 text-gray-900">
-                <div className="text-center">
-                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"></div>
-                  <p>{t('status_checkingConfig')}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Show setup message when no models are configured */}
-            {hasConfiguredModels === false && (
-              <div className="flex flex-1 items-center justify-center p-8 text-gray-900">
-                <div className="max-w-md text-center">
-                  <img src="/icon-128.png" alt="VisibleAi Logo" className="mx-auto mb-4 size-12" />
-                  <h3 className="mb-2 text-lg font-semibold text-gray-900">{t('welcome_title')}</h3>
-                  <p className="mb-4">{t('welcome_instruction')}</p>
-                  <button
-                    onClick={() => chrome.runtime.openOptionsPage()}
-                    className="my-4 rounded-lg px-4 py-2 font-medium transition-colors bg-gray-900 text-white hover:bg-gray-700">
-                    {t('welcome_openSettings')}
-                  </button>
-                </div>
-              </div>
-            )}
-            {/* Show accessibility analyzer when activated */}
-            {showAccessibilityAnalyzer && (
-              <div className="flex-1 overflow-hidden">
+            <div className="flex-1 pt-4 overflow-y-auto">
+              {/* Show accessibility analyzer when activated */}
+              <div>
                 <AccessibilityAnalyzer
                   isDarkMode={false}
-                  onClose={() => setShowAccessibilityAnalyzer(false)}
+                  onClose={() => {}}
                   onHandleStarBasicAnalysis={handleBasicAccessibilityAnalysis}
                   visible={true}
                   currentPageData={currentPageData!}
                   isAnalyzing={isAnalyzing}
-                  // accessibilityResult={accessibilityResult}
                 />
               </div>
-            )}
+
+              {/* Show Readability Button */}
+              <div className="h-full overflow-y-auto px-4">
+                <button
+                  onClick={handleImproveReadability}
+                  disabled={!currentPageData}
+                  className={`w-full rounded-lg p-3 text-white transition-all disabled:cursor-not-allowed disabled:bg-blue-300 ${
+                    currentPageData?.readabilityMode ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-500 hover:bg-blue-600'
+                  }`}>
+                  {currentPageData?.readabilityMode ? 'Exit Reader View' : 'Improve Readability'}
+                </button>
+              </div>
+            </div>
 
             {/* Show normal chat interface when models are configured */}
             {hasConfiguredModels === true && (
@@ -1250,16 +1208,6 @@ const SidePanel = () => {
                         isDarkMode={false}
                         historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
                         onReplay={handleReplay}
-                      />
-                    </div>
-                    <div className="flex-1 overflow-y-auto">
-                      <BookmarkList
-                        bookmarks={favoritePrompts}
-                        onBookmarkSelect={handleBookmarkSelect}
-                        onBookmarkUpdateTitle={handleBookmarkUpdateTitle}
-                        onBookmarkDelete={handleBookmarkDelete}
-                        onBookmarkReorder={handleBookmarkReorder}
-                        isDarkMode={false}
                       />
                     </div>
                   </>

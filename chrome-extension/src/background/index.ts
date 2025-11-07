@@ -19,6 +19,7 @@ import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
 import { AccessibilityService } from './services/accessibility';
+import { ReadabilityService } from './services/readability';
 import { initializeDefaultConfig } from './utils/initializeDefaultConfig';
 
 const logger = createLogger('background');
@@ -27,6 +28,7 @@ const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
 const accessibilityService = new AccessibilityService(browserContext);
+const readabilityService = new ReadabilityService();
 
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
@@ -278,6 +280,49 @@ chrome.runtime.onConnect.addListener(port => {
               return port.postMessage({
                 type: 'accessibility_analysis_error',
                 error: error instanceof Error ? error.message : 'Failed to perform accessibility analysis',
+              });
+            }
+          }
+
+          case 'toggle_readability_mode': {
+            try {
+              if (!message.tabId) {
+                return port.postMessage({
+                  type: 'readability_mode_error',
+                  error: 'No tab ID provided',
+                });
+              }
+
+              logger.info('Toggling readability mode for tab:', message.tabId);
+
+              // Extract content using readability service
+              const result = await readabilityService.extractContent(message.tabId);
+
+              if (!result.success || !result.article) {
+                throw new Error(result.error || 'Failed to extract content');
+              }
+
+              // Send message to content script to toggle readability mode
+              try {
+                const response = await chrome.tabs.sendMessage(message.tabId, {
+                  type: 'toggle_readability_mode',
+                  article: result.article,
+                });
+
+                return port.postMessage({
+                  type: 'readability_mode_toggled',
+                  active: response.active,
+                });
+              } catch (contentScriptError) {
+                // If content script is not responding, try to inject it first
+                logger.warn('Content script not responding, attempting to reload page or re-inject');
+                throw new Error('Content script not available. Please refresh the page and try again.');
+              }
+            } catch (error) {
+              logger.error('Readability mode toggle failed:', error);
+              return port.postMessage({
+                type: 'readability_mode_error',
+                error: error instanceof Error ? error.message : 'Failed to toggle readability mode',
               });
             }
           }

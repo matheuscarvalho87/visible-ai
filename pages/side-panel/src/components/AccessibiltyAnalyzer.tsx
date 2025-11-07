@@ -26,59 +26,29 @@ interface AccessibilityAnalyzerProps {
 const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
   currentPageData,
   onHandleStarBasicAnalysis,
-  onClose,
   visible,
   isDarkMode = false,
   isAnalyzing = false,
 }) => {
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
   if (!visible || !currentPageData) return null;
 
   return (
-    <div className="h-full overflow-y-auto p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-          Accessibility Analyzer
-        </h2>
-        <button
-          onClick={onClose}
-          className={`text-sm ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'}`}>
-          ✕
-        </button>
-      </div>
-
-      {/* Current Page URL */}
-      <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>
-        <h3 className={`mb-2 text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>Current Page</h3>
-        <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} break-all`}>
-          {currentPageData.pageUrl}
-        </p>
-        <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-          created at: {formatDate(currentPageData.createdAt)}
-        </p>
-        <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-          update at: {formatDate(currentPageData.updatedAt)}
-        </p>
-      </div>
-
+    <div className="h-full overflow-y-auto px-4">
       {/* Analysis Button */}
-      <div className="mb-4">
-        <button
-          onClick={onHandleStarBasicAnalysis}
-          disabled={isAnalyzing}
-          className={`w-full rounded-lg p-3 transition-all ${
-            isDarkMode
-              ? 'bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-800'
-              : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-blue-300'
-          } disabled:cursor-not-allowed`}>
-          {isAnalyzing ? 'Analyzing...' : 'Start Accessibility Analysis'}
-        </button>
-      </div>
-
+      {!currentPageData.pageSummary && (
+        <div className="mb-4">
+          <button
+            onClick={onHandleStarBasicAnalysis}
+            disabled={isAnalyzing}
+            className={`w-full rounded-lg p-3 transition-all ${
+              isDarkMode
+                ? 'bg-blue-600 text-white hover:bg-blue-500 disabled:bg-blue-800'
+                : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-blue-300'
+            } disabled:cursor-not-allowed`}>
+            {isAnalyzing ? 'Analyzing...' : 'Improve Accessibility'}
+          </button>
+        </div>
+      )}
       {/* Live Analysis Result */}
       {currentPageData.pageSummary && (
         <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>

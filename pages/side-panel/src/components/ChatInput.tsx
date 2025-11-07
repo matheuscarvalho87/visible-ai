@@ -129,9 +129,9 @@ export default function ChatInput({
     }
   }, [historicalSessionId, onReplay]);
 
-  const handleFileSelect = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  // const handleFileSelect = useCallback(() => {
+  //   fileInputRef.current?.click();
+  // }, []);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -243,7 +243,7 @@ export default function ChatInput({
           }`}>
           <div className="flex gap-2 text-gray-500">
             {/* File attachment button */}
-            <button
+            {/* <button
               type="button"
               onClick={handleFileSelect}
               disabled={disabled}
@@ -257,7 +257,7 @@ export default function ChatInput({
                     : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
               }`}>
               <span className="text-lg">📎</span>
-            </button>
+            </button> */}
 
             {/* Hidden file input */}
             <input

@@ -147,6 +147,9 @@ importers:
       '@langchain/xai':
         specifier: ^0.1.0
         version: 0.1.0(@langchain/core@0.3.78(openai@5.12.2(ws@8.18.3)(zod@3.25.76)))(ws@8.18.3)
+      '@mozilla/readability':
+        specifier: ^0.6.0
+        version: 0.6.0
       jsonrepair:
         specifier: 3.13.1
         version: 3.13.1
