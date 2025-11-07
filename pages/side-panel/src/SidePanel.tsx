@@ -18,6 +18,7 @@ import ChatHistoryList from './components/ChatHistoryList';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 import AccessibilityAnalyzer from './components/AccessibiltyAnalyzer';
+import FontSizeControl from './components/FontSizeControl';
 
 export interface CurrentPageDataProps {
   id: string;
@@ -82,6 +83,7 @@ const SidePanel = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
+  const [fontSize, setFontSize] = useState<number>(100); // Percentage (100 = default)
 
   // Check if models are configured
   const checkModelConfiguration = useCallback(async () => {
@@ -1120,8 +1122,16 @@ const SidePanel = () => {
     }
   };
 
+  const handleIncreaseFontSize = () => {
+    setFontSize(prev => Math.min(prev + 10, 200)); // Max 200%
+  };
+
+  const handleDecreaseFontSize = () => {
+    setFontSize(prev => Math.max(prev - 10, 60)); // Min 60%
+  };
+
   return (
-    <div>
+    <div style={{ fontSize: `${fontSize}%` }}>
       <div className="flex h-screen flex-col bg-white overflow-hidden border border-gray-300 rounded-2xl">
         <header className="header relative">
           <div className="header-logo">
@@ -1138,6 +1148,7 @@ const SidePanel = () => {
             )}
           </div>
           <div className="header-icons">
+            <FontSizeControl onIncrease={handleIncreaseFontSize} onDecrease={handleDecreaseFontSize} />
             <button
               type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
@@ -1172,6 +1183,7 @@ const SidePanel = () => {
                   visible={true}
                   currentPageData={currentPageData!}
                   isAnalyzing={isAnalyzing}
+                  fontSize={fontSize}
                 />
               </div>
 
