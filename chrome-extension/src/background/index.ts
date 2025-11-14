@@ -56,7 +56,18 @@ chrome.commands.onCommand.addListener(async command => {
         }
 
         // Use local accessibility service
-        const analysisResult = await accessibilityService.analyzeAccessibility(tabId, tabs[0].url || '');
+        const analysisResult = await accessibilityService.analyzeAccessibility(
+          tabId,
+          tabs[0].url || '',
+          (progressMessage: string) => {
+            if (currentPort) {
+              currentPort.postMessage({
+                type: 'accessibility_analysis_progress',
+                message: progressMessage,
+              });
+            }
+          },
+        );
 
         if (!analysisResult) {
           throw new Error('Analysis returned no result');
@@ -350,7 +361,16 @@ chrome.runtime.onConnect.addListener(port => {
               logger.info('Starting accessibility analysis for tab:', message.tabId, 'URL:', message.url);
 
               // Use local accessibility service instead of backend
-              const analysisResult = await accessibilityService.analyzeAccessibility(message.tabId, message.url);
+              const analysisResult = await accessibilityService.analyzeAccessibility(
+                message.tabId,
+                message.url,
+                (progressMessage: string) => {
+                  port.postMessage({
+                    type: 'accessibility_analysis_progress',
+                    message: progressMessage,
+                  });
+                },
+              );
 
               if (!analysisResult) {
                 throw new Error('Analysis returned no result');

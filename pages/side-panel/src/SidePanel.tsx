@@ -54,6 +54,7 @@ const SidePanel = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [currentPageData, setCurrentPageData] = useState<CurrentPageDataProps | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<string>('');
   // const [accessibilityResult, setAccessibilityResult] = useState<string | null>(null);
 
   // Function to update current page data
@@ -398,12 +399,18 @@ const SidePanel = () => {
           // Handle accessibility analysis start (from keyboard shortcut)
           console.log('[SidePanel] Received accessibility_analysis_start');
           setIsAnalyzing(true);
+          setAnalysisProgress('Starting analysis...');
+        } else if (message && message.type === 'accessibility_analysis_progress') {
+          // Handle accessibility analysis progress updates
+          console.log('[SidePanel] Progress:', message.message);
+          setAnalysisProgress(message.message);
         } else if (message && message.type === 'accessibility_analysis_complete') {
           // Handle accessibility analysis completion
           console.log('[SidePanel] Received accessibility_analysis_complete:', message);
           console.log('[SidePanel] Report:', message.report);
           console.log('[SidePanel] Image analysis:', message.imageAnalysis);
           setIsAnalyzing(false);
+          setAnalysisProgress('');
 
           // Get current tab URL to ensure we use the correct URL
           const getCurrentTabUrl = async (): Promise<string> => {
@@ -459,6 +466,7 @@ const SidePanel = () => {
             timestamp: Date.now(),
           });
           setIsAnalyzing(false);
+          setAnalysisProgress('');
         } else if (message && message.type === 'readability_mode_toggled') {
           // Handle readability mode toggle success
           console.log('Readability mode toggled:', message.active);
@@ -1209,6 +1217,7 @@ const SidePanel = () => {
                   visible={true}
                   currentPageData={currentPageData!}
                   isAnalyzing={isAnalyzing}
+                  analysisProgress={analysisProgress}
                   fontSize={fontSize}
                 />
               </div>

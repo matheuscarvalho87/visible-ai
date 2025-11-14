@@ -32,6 +32,7 @@ interface AccessibilityAnalyzerProps {
   visible: boolean;
   isDarkMode?: boolean;
   isAnalyzing?: boolean;
+  analysisProgress?: string;
   fontSize?: number;
   // accessibilityResult?: string | null;
 }
@@ -42,6 +43,7 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
   visible,
   isDarkMode = false,
   isAnalyzing = false,
+  analysisProgress = '',
   fontSize = 100,
 }) => {
   if (!visible || !currentPageData) return null;
@@ -66,6 +68,17 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
               : 'Improve Accessibility (Alt+Shift+A)'}
         </button>
       </div>
+      {/* Progress Message */}
+      {isAnalyzing && analysisProgress && (
+        <div
+          className={`mb-4 rounded-lg border p-3 backdrop-blur-sm ${isDarkMode ? 'border-blue-700 bg-blue-900/50' : 'border-blue-200 bg-blue-50'}`}>
+          <div className="flex items-center">
+            <div
+              className={`mr-3 size-4 animate-spin rounded-full border-2 border-t-transparent ${isDarkMode ? 'border-blue-400' : 'border-blue-500'}`}></div>
+            <p className={`text-sm ${isDarkMode ? 'text-blue-200' : 'text-blue-700'}`}>{analysisProgress}</p>
+          </div>
+        </div>
+      )}
       {/* Live Analysis Result */}
       {currentPageData.pageSummary && (
         <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>

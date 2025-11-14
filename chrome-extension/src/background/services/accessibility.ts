@@ -1151,17 +1151,27 @@ Generate a clear, actionable aria-label that describes what will happen when the
   /**
    * Perform accessibility analysis using direct LLM call (orchestrator method)
    */
-  async analyzeAccessibility(tabId: number, url: string): Promise<AccessibilityAnalysisResult> {
+  async analyzeAccessibility(
+    tabId: number,
+    url: string,
+    progressCallback?: (message: string) => void,
+  ): Promise<AccessibilityAnalysisResult> {
     try {
       logger.info('Starting accessibility analysis for tab:', tabId, url);
 
+      progressCallback?.('Extracting page content...');
       // Extract page content
       const article = await this.extractPageContent(tabId);
 
+      progressCallback?.('Extracting images from page (Top 10 - DEMO mode)...');
       // Extract images, links, and buttons from the page
-      const images = await this.extractImages(tabId);
-      const links = await this.extractLinks(tabId);
-      const buttons = await this.extractButtons(tabId);
+      const images = (await this.extractImages(tabId)).slice(0, 10).reverse;
+
+      progressCallback?.('Extracting links from page (Top 10 - DEMO mode)...');
+      const links = (await this.extractLinks(tabId)).slice(0, 10).reverse();
+
+      progressCallback?.('Extracting buttons from page (Top 10 - DEMO mode)...');
+      const buttons = (await this.extractButtons(tabId)).slice(0, 10).reverse();
 
       logger.info('Extracted elements for analysis:', {
         images: images.length,
@@ -1169,20 +1179,27 @@ Generate a clear, actionable aria-label that describes what will happen when the
         buttons: buttons.length,
       });
 
+      progressCallback?.('Configuring AI model...');
       // Get LLM configuration
       const { providerConfig, modelConfig } = await this.getLLMConfiguration();
 
+      progressCallback?.('Generating page summary...');
       // Generate page summary
       const pageSummary = await this.generatePageSummary(article, providerConfig, modelConfig);
 
+      progressCallback?.(`Analyzing ${images.length} images with AI vision...`);
       // Analyze images and generate alt text
       const imageAnalysis = await this.analyzeImages(tabId, images, providerConfig, modelConfig);
 
+      progressCallback?.(`Analyzing ${links.length} links...`);
       // Analyze links and generate descriptions
       const linkAnalysis = await this.analyzeLinks(tabId, links, providerConfig, modelConfig, pageSummary);
 
+      progressCallback?.(`Analyzing ${buttons.length} buttons...`);
       // Analyze buttons and generate descriptions
       const buttonAnalysis = await this.analyzeButtons(tabId, buttons, providerConfig, modelConfig, pageSummary);
+
+      progressCallback?.('Finalizing accessibility report...');
 
       logger.info('Completed accessibility analysis:', {
         pageSummaryLength: pageSummary.length,
