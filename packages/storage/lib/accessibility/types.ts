@@ -6,6 +6,17 @@ export interface AccessibilityReport {
     currentAlt: string;
     generatedAlt?: string;
   }[];
+  linkAnalysis?: {
+    linkUrl: string;
+    linkText: string;
+    currentTitle: string;
+    generatedDescription?: string;
+  }[];
+  buttonAnalysis?: {
+    buttonText: string;
+    currentAriaLabel: string;
+    generatedDescription?: string;
+  }[];
   createdAt: number;
   updatedAt: number;
 }

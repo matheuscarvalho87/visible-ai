@@ -10,6 +10,17 @@ interface PageData {
     currentAlt: string;
     generatedAlt?: string;
   }[];
+  linkAnalysis?: {
+    linkUrl: string;
+    linkText: string;
+    currentTitle: string;
+    generatedDescription?: string;
+  }[];
+  buttonAnalysis?: {
+    buttonText: string;
+    currentAriaLabel: string;
+    generatedDescription?: string;
+  }[];
   createdAt: number;
   updatedAt: number;
 }
@@ -65,7 +76,7 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
         </div>
       )}
       {currentPageData.imageAnalysis && currentPageData.imageAnalysis.length > 0 && (
-        <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} p-4 backdrop-blur-sm`}>
+        <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>
           <h3 className={`mb-3 font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
             Image Analysis ({currentPageData.imageAnalysis.length} images)
           </h3>
@@ -101,6 +112,94 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {currentPageData.linkAnalysis && currentPageData.linkAnalysis.length > 0 && (
+        <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} mb-4 p-4 backdrop-blur-sm`}>
+          <h3 className={`mb-3 font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+            Link Analysis ({currentPageData.linkAnalysis.length} links)
+          </h3>
+          <div className="space-y-3">
+            {currentPageData.linkAnalysis.map((link, index) => (
+              <div
+                key={index}
+                className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                <div className="space-y-2">
+                  <div>
+                    <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Link text:</span>
+                    <p className={` ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{link.linkText}</p>
+                  </div>
+                  <div>
+                    <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>URL:</span>
+                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} break-all`}>
+                      {link.linkUrl}
+                    </p>
+                  </div>
+                  <div>
+                    <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Current title:
+                    </span>
+                    <p className={` ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {link.currentTitle || 'No title'}
+                    </p>
+                  </div>
+                  {link.generatedDescription && (
+                    <div>
+                      <span className={` font-medium ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>
+                        Generated description:
+                      </span>
+                      <p className={` ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {link.generatedDescription}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {currentPageData.buttonAnalysis && currentPageData.buttonAnalysis.length > 0 && (
+        <div className={`rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-white/50'} p-4 backdrop-blur-sm`}>
+          <h3 className={`mb-3 font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+            Button Analysis ({currentPageData.buttonAnalysis.length} buttons)
+          </h3>
+          <div className="space-y-3">
+            {currentPageData.buttonAnalysis.map((button, index) => (
+              <div
+                key={index}
+                className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                <div className="space-y-2">
+                  <div>
+                    <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Button text:
+                    </span>
+                    <p className={` ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {button.buttonText || '(No text - icon button)'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Current aria-label:
+                    </span>
+                    <p className={` ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {button.currentAriaLabel || 'No aria-label'}
+                    </p>
+                  </div>
+                  {button.generatedDescription && (
+                    <div>
+                      <span className={` font-medium ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>
+                        Generated description:
+                      </span>
+                      <p className={` ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {button.generatedDescription}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

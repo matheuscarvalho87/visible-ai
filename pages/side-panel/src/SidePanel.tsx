@@ -29,6 +29,17 @@ export interface CurrentPageDataProps {
     currentAlt: string;
     generatedAlt?: string;
   }[];
+  linkAnalysis?: {
+    linkUrl: string;
+    linkText: string;
+    currentTitle: string;
+    generatedDescription?: string;
+  }[];
+  buttonAnalysis?: {
+    buttonText: string;
+    currentAriaLabel: string;
+    generatedDescription?: string;
+  }[];
   readabilityMode?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -58,6 +69,8 @@ const SidePanel = () => {
           pageUrl: currentTab.url,
           pageSummary: loadedSummary?.pageSummary || '',
           imageAnalysis: loadedSummary?.imageAnalysis || [],
+          linkAnalysis: loadedSummary?.linkAnalysis || [],
+          buttonAnalysis: loadedSummary?.buttonAnalysis || [],
           updatedAt: Date.now(),
           createdAt: loadedSummary?.createdAt || Date.now(),
         });
@@ -407,7 +420,9 @@ const SidePanel = () => {
             const report: AccessibilityReport = {
               pageSummary: message.report?.pageSummary || 'Analysis completed',
               pageUrl: currentUrl,
-              imageAnalysis: message.imageAnalysis || [],
+              imageAnalysis: message.report?.imageAnalysis || message.imageAnalysis || [],
+              linkAnalysis: message.report?.linkAnalysis || [],
+              buttonAnalysis: message.report?.buttonAnalysis || [],
               createdAt: currentPageData?.createdAt || Date.now(),
               updatedAt: Date.now(),
             };
@@ -418,7 +433,9 @@ const SidePanel = () => {
                 id: prev?.id || crypto.randomUUID(),
                 pageUrl: currentUrl,
                 pageSummary: message.report?.pageSummary || 'Analysis completed',
-                imageAnalysis: message.imageAnalysis || [],
+                imageAnalysis: message.report?.imageAnalysis || message.imageAnalysis || [],
+                linkAnalysis: message.report?.linkAnalysis || [],
+                buttonAnalysis: message.report?.buttonAnalysis || [],
                 readabilityMode: prev?.readabilityMode,
                 updatedAt: report.updatedAt,
                 createdAt: prev?.createdAt || Date.now(),
@@ -1196,8 +1213,10 @@ const SidePanel = () => {
                 />
               </div>
 
+              {/* Commented for Demo */}
+
               {/* Show Readability Button */}
-              <div className="overflow-y-auto px-4">
+              {/* <div className="overflow-y-auto px-4">
                 <button
                   onClick={handleImproveReadability}
                   disabled={!currentPageData}
@@ -1210,9 +1229,10 @@ const SidePanel = () => {
                     : 'Improve Readability (Alt+Shift+R)'}
                 </button>
               </div>
-            </div>
+            </div> */}
 
-            {/* Show normal chat interface when models are configured */}
+              {/* Commented for Demo */}
+              {/* Show normal chat interface when models are configured
             {hasConfiguredModels === true && (
               <>
                 {messages.length === 0 && (
@@ -1262,7 +1282,8 @@ const SidePanel = () => {
                   </div>
                 )}
               </>
-            )}
+            )} */}
+            </div>
           </>
         )}
       </div>

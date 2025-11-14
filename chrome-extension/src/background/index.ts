@@ -68,6 +68,9 @@ chrome.commands.onCommand.addListener(async command => {
             type: 'accessibility_analysis_complete',
             report: {
               pageSummary: analysisResult.pageSummary,
+              imageAnalysis: analysisResult.imageAnalysis,
+              linkAnalysis: analysisResult.linkAnalysis,
+              buttonAnalysis: analysisResult.buttonAnalysis,
             },
             imageAnalysis: analysisResult.imageAnalysis,
           });
@@ -357,6 +360,9 @@ chrome.runtime.onConnect.addListener(port => {
                 type: 'accessibility_analysis_complete',
                 report: {
                   pageSummary: analysisResult.pageSummary,
+                  imageAnalysis: analysisResult.imageAnalysis,
+                  linkAnalysis: analysisResult.linkAnalysis,
+                  buttonAnalysis: analysisResult.buttonAnalysis,
                 },
                 imageAnalysis: analysisResult.imageAnalysis,
               });
