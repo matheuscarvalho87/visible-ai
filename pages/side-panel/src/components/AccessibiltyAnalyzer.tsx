@@ -9,17 +9,20 @@ interface PageData {
     imageUrl: string;
     currentAlt: string;
     generatedAlt?: string;
+    selector: string;
   }[];
   linkAnalysis?: {
     linkUrl: string;
     linkText: string;
     currentTitle: string;
     generatedDescription?: string;
+    selector: string;
   }[];
   buttonAnalysis?: {
     buttonText: string;
     currentAriaLabel: string;
     generatedDescription?: string;
+    selector: string;
   }[];
   createdAt: number;
   updatedAt: number;
@@ -47,6 +50,20 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
   fontSize = 100,
 }) => {
   if (!visible || !currentPageData) return null;
+
+  const handleHighlightElement = async (selector: string) => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab.id) {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'highlight_element',
+          selector: selector,
+        });
+      }
+    } catch (error) {
+      console.error('Error highlighting element:', error);
+    }
+  };
 
   return (
     <div style={{ fontSize: `${fontSize}%` }} className={`h-full overflow-y-auto px-4`}>
@@ -97,7 +114,18 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
             {currentPageData.imageAnalysis.map((image, index) => (
               <div
                 key={index}
-                className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                role="button"
+                tabIndex={0}
+                onClick={() => handleHighlightElement(image.selector)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleHighlightElement(image.selector);
+                  }
+                }}
+                className={`cursor-pointer rounded-lg border p-3 transition-all hover:shadow-lg ${isDarkMode ? 'border-gray-600 hover:border-green-500' : 'border-gray-300 hover:border-green-500'}`}
+                title="Click to highlight this element on the page"
+                aria-label={`Highlight image: ${image.currentAlt || 'No alt text'}`}>
                 <img
                   width={(200 * fontSize) / 100}
                   height={(200 * fontSize) / 100}
@@ -140,7 +168,18 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
             {currentPageData.linkAnalysis.map((link, index) => (
               <div
                 key={index}
-                className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                role="button"
+                tabIndex={0}
+                onClick={() => handleHighlightElement(link.selector)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleHighlightElement(link.selector);
+                  }
+                }}
+                className={`cursor-pointer rounded-lg border p-3 transition-all hover:shadow-lg ${isDarkMode ? 'border-gray-600 hover:border-green-500' : 'border-gray-300 hover:border-green-500'}`}
+                title="Click to highlight this element on the page"
+                aria-label={`Highlight link: ${link.linkText}`}>
                 <div className="space-y-2">
                   <div>
                     <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Link text:</span>
@@ -185,7 +224,18 @@ const AccessibilityAnalyzer: React.FC<AccessibilityAnalyzerProps> = ({
             {currentPageData.buttonAnalysis.map((button, index) => (
               <div
                 key={index}
-                className={`rounded-lg border p-3 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                role="button"
+                tabIndex={0}
+                onClick={() => handleHighlightElement(button.selector)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleHighlightElement(button.selector);
+                  }
+                }}
+                className={`cursor-pointer rounded-lg border p-3 transition-all hover:shadow-lg ${isDarkMode ? 'border-gray-600 hover:border-green-500' : 'border-gray-300 hover:border-green-500'}`}
+                title="Click to highlight this element on the page"
+                aria-label={`Highlight button: ${button.buttonText || 'icon button'}`}>
                 <div className="space-y-2">
                   <div>
                     <span className={` font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>

@@ -5,6 +5,11 @@ let readabilityModeActive = false;
 let originalBodyHTML: string | null = null;
 let originalBodyStyle: string | null = null;
 
+// Highlighted element state
+let highlightedElement: HTMLElement | null = null;
+let originalBorder: string | null = null;
+let originalOutline: string | null = null;
+
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'toggle_readability_mode') {
@@ -20,6 +25,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
     } catch (error) {
       console.error('Error toggling readability mode:', error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  } else if (message.type === 'highlight_element') {
+    try {
+      highlightElement(message.selector);
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('Error highlighting element:', error);
       sendResponse({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -180,4 +196,44 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function highlightElement(selector: string): void {
+  // Remove previous highlight if exists
+  if (highlightedElement) {
+    if (originalBorder !== null) {
+      highlightedElement.style.border = originalBorder;
+    }
+    if (originalOutline !== null) {
+      highlightedElement.style.outline = originalOutline;
+    }
+    highlightedElement = null;
+    originalBorder = null;
+    originalOutline = null;
+  }
+
+  // Find and highlight the new element
+  const element = document.querySelector(selector);
+  if (element && element instanceof HTMLElement) {
+    // Save original styles
+    originalBorder = element.style.border;
+    originalOutline = element.style.outline;
+
+    // Apply green border highlight
+    element.style.border = '3px solid #10b981';
+    element.style.outline = '2px solid #10b981';
+
+    // Store reference
+    highlightedElement = element;
+
+    // Scroll element into view
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Focus the element if possible
+    if (element.tabIndex >= 0 || element instanceof HTMLAnchorElement || element instanceof HTMLButtonElement) {
+      element.focus();
+    }
+  } else {
+    throw new Error(`Element not found with selector: ${selector}`);
+  }
 }

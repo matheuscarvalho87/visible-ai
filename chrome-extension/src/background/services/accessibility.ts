@@ -46,17 +46,20 @@ export interface AccessibilityAnalysisResult {
     imageUrl: string;
     currentAlt: string;
     generatedAlt?: string;
+    selector: string;
   }>;
   linkAnalysis: Array<{
     linkUrl: string;
     linkText: string;
     currentTitle: string;
     generatedDescription?: string;
+    selector: string;
   }>;
   buttonAnalysis: Array<{
     buttonText: string;
     currentAriaLabel: string;
     generatedDescription?: string;
+    selector: string;
   }>;
 }
 
@@ -124,31 +127,9 @@ export class AccessibilityService {
 
           // Helper: Generate CSS selector for an element
           const generateSelector = (element: Element): string => {
-            if (element.id) {
-              return `#${element.id}`;
-            }
-
-            const path: string[] = [];
-            let current: Element | null = element;
-
-            while (current && current !== document.body) {
-              let selector = current.tagName.toLowerCase();
-
-              if (current.className && typeof current.className === 'string') {
-                const classes = current.className.trim().split(/\s+/).slice(0, 2); // Use first 2 classes
-                if (classes.length > 0) {
-                  selector += `.${classes.join('.')}`;
-                }
-              }
-
-              path.unshift(selector);
-              current = current.parentElement;
-
-              // Limit depth
-              if (path.length >= 5) break;
-            }
-
-            return path.join(' > ');
+            const radomId = Math.random().toString(36).slice(2);
+            element.setAttribute('data-ai-id', 'visible-' + radomId);
+            return `[data-ai-id='visible-${radomId}']`;
           };
 
           // Helper: Check if element is in main content area
@@ -195,8 +176,8 @@ export class AccessibilityService {
           };
 
           // Helper: Calculate importance score based on image attributes
-          const calculateImportanceScore = (element: Element, isMain: boolean): number => {
-            let score = isMain ? 50 : 0;
+          const calculateImportanceScore = (element: Element): number => {
+            let score = 0;
 
             // Size considerations
             if (element instanceof HTMLImageElement) {
@@ -204,8 +185,8 @@ export class AccessibilityService {
               const height = element.naturalHeight || element.height;
 
               // Prefer larger images
-              if (width > 300 && height > 200) score += 30;
-              else if (width > 150 && height > 100) score += 15;
+              if (width > 800 && height > 800) score += 30;
+              else if (width > 350 && height > 300) score += 15;
 
               // Penalize tiny images (likely icons or tracking pixels)
               if (width < 50 || height < 50) score -= 30;
@@ -244,7 +225,7 @@ export class AccessibilityService {
             processedUrls.add(src);
 
             const isMain = isInMainContent(img);
-            const importanceScore = calculateImportanceScore(img, isMain);
+            const importanceScore = calculateImportanceScore(img);
 
             images.push({
               imageUrl: src,
@@ -270,7 +251,7 @@ export class AccessibilityService {
             processedUrls.add(bgUrl);
 
             const isMain = isInMainContent(div);
-            const importanceScore = calculateImportanceScore(div, isMain);
+            const importanceScore = calculateImportanceScore(div);
 
             // Background images often have additional context in aria-label
             const ariaLabel = div.getAttribute('aria-label') || '';
@@ -334,30 +315,9 @@ export class AccessibilityService {
           };
 
           const generateSelector = (element: Element): string => {
-            if (element.id) {
-              return `#${element.id}`;
-            }
-
-            const path: string[] = [];
-            let current: Element | null = element;
-
-            while (current && current !== document.body) {
-              let selector = current.tagName.toLowerCase();
-
-              if (current.className && typeof current.className === 'string') {
-                const classes = current.className.trim().split(/\s+/).slice(0, 2);
-                if (classes.length > 0) {
-                  selector += `.${classes.join('.')}`;
-                }
-              }
-
-              path.unshift(selector);
-              current = current.parentElement;
-
-              if (path.length >= 5) break;
-            }
-
-            return path.join(' > ');
+            const radomId = Math.random().toString(36).slice(2);
+            element.setAttribute('data-ai-id', 'visible-' + radomId);
+            return `[data-ai-id='visible-${radomId}']`;
           };
 
           const isInMainContent = (element: Element): boolean => {
@@ -500,30 +460,9 @@ export class AccessibilityService {
           }
 
           const generateSelector = (element: Element): string => {
-            if (element.id) {
-              return `#${element.id}`;
-            }
-
-            const path: string[] = [];
-            let current: Element | null = element;
-
-            while (current && current !== document.body) {
-              let selector = current.tagName.toLowerCase();
-
-              if (current.className && typeof current.className === 'string') {
-                const classes = current.className.trim().split(/\s+/).slice(0, 2);
-                if (classes.length > 0) {
-                  selector += `.${classes.join('.')}`;
-                }
-              }
-
-              path.unshift(selector);
-              current = current.parentElement;
-
-              if (path.length >= 5) break;
-            }
-
-            return path.join(' > ');
+            const radomId = Math.random().toString(36).slice(2);
+            element.setAttribute('data-ai-id', 'visible-' + radomId);
+            return `[data-ai-id='visible-${radomId}']`;
           };
 
           const getParentContext = (element: Element): string => {
@@ -784,7 +723,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
     image: BasicImageInfo,
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
-  ): Promise<{ imageUrl: string; currentAlt: string; generatedAlt?: string }> {
+  ): Promise<{ imageUrl: string; currentAlt: string; generatedAlt?: string; selector: string }> {
     try {
       const visionModel = createChatModel(providerConfig, modelConfig);
 
@@ -825,6 +764,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
           imageUrl: image.imageUrl,
           currentAlt: image.currentAlt,
           generatedAlt,
+          selector: image.selector,
         };
       } catch (error) {
         // Check if it's a 400 error (BadRequestError) indicating image download failure
@@ -877,6 +817,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
               imageUrl: image.imageUrl,
               currentAlt: image.currentAlt,
               generatedAlt,
+              selector: image.selector,
             };
           } else {
             logger.error('Failed to convert image to base64, skipping image');
@@ -896,6 +837,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
         imageUrl: image.imageUrl,
         currentAlt: image.currentAlt,
         generatedAlt: undefined,
+        selector: image.selector,
       };
     }
   }
@@ -908,7 +850,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
     images: BasicImageInfo[],
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
-  ): Promise<Array<{ imageUrl: string; currentAlt: string; generatedAlt?: string }>> {
+  ): Promise<Array<{ imageUrl: string; currentAlt: string; generatedAlt?: string; selector: string }>> {
     const imageAnalysisPromises = images.map(image =>
       this.generateAltTextForImage(tabId, image, providerConfig, modelConfig),
     );
@@ -977,7 +919,13 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
     pageSummary: string,
-  ): Promise<{ linkUrl: string; linkText: string; currentTitle: string; generatedDescription?: string }> {
+  ): Promise<{
+    linkUrl: string;
+    linkText: string;
+    currentTitle: string;
+    generatedDescription?: string;
+    selector: string;
+  }> {
     try {
       // First, try to get metadata from the link URL
       const metadata = await this.fetchLinkMetadata(link.linkUrl);
@@ -998,6 +946,7 @@ Provide a clear, descriptive summary suitable for screen reader users.`;
             linkText: link.linkText,
             currentTitle: link.currentTitle,
             generatedDescription,
+            selector: link.selector,
           };
         }
       }
@@ -1031,6 +980,7 @@ Generate a clear, informative title that complements the link text without being
         linkText: link.linkText,
         currentTitle: link.currentTitle,
         generatedDescription,
+        selector: link.selector,
       };
     } catch (error) {
       logger.error('Failed to generate link description:', {
@@ -1043,6 +993,7 @@ Generate a clear, informative title that complements the link text without being
         linkText: link.linkText,
         currentTitle: link.currentTitle,
         generatedDescription: undefined,
+        selector: link.selector,
       };
     }
   }
@@ -1056,7 +1007,7 @@ Generate a clear, informative title that complements the link text without being
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
     pageSummary: string,
-  ): Promise<{ buttonText: string; currentAriaLabel: string; generatedDescription?: string }> {
+  ): Promise<{ buttonText: string; currentAriaLabel: string; generatedDescription?: string; selector: string }> {
     try {
       const model = createChatModel(providerConfig, modelConfig);
 
@@ -1085,6 +1036,7 @@ Generate a clear, actionable aria-label that describes what will happen when the
         buttonText: button.buttonText,
         currentAriaLabel: button.currentAriaLabel,
         generatedDescription,
+        selector: button.selector,
       };
     } catch (error) {
       logger.error('Failed to generate button description:', {
@@ -1096,6 +1048,7 @@ Generate a clear, actionable aria-label that describes what will happen when the
         buttonText: button.buttonText,
         currentAriaLabel: button.currentAriaLabel,
         generatedDescription: undefined,
+        selector: button.selector,
       };
     }
   }
@@ -1109,7 +1062,9 @@ Generate a clear, actionable aria-label that describes what will happen when the
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
     pageSummary: string,
-  ): Promise<Array<{ linkUrl: string; linkText: string; currentTitle: string; generatedDescription?: string }>> {
+  ): Promise<
+    Array<{ linkUrl: string; linkText: string; currentTitle: string; generatedDescription?: string; selector: string }>
+  > {
     const linkAnalysisPromises = links.map(link =>
       this.generateLinkDescription(tabId, link, providerConfig, modelConfig, pageSummary),
     );
@@ -1133,7 +1088,7 @@ Generate a clear, actionable aria-label that describes what will happen when the
     providerConfig: ProviderConfig,
     modelConfig: ModelConfig,
     pageSummary: string,
-  ): Promise<Array<{ buttonText: string; currentAriaLabel: string; generatedDescription?: string }>> {
+  ): Promise<Array<{ buttonText: string; currentAriaLabel: string; generatedDescription?: string; selector: string }>> {
     const buttonAnalysisPromises = buttons.map(button =>
       this.generateButtonDescription(tabId, button, providerConfig, modelConfig, pageSummary),
     );
@@ -1165,13 +1120,16 @@ Generate a clear, actionable aria-label that describes what will happen when the
 
       progressCallback?.('Extracting images from page (Top 10 - DEMO mode)...');
       // Extract images, links, and buttons from the page
-      const images = (await this.extractImages(tabId)).slice(0, 10).reverse;
+      let images = await this.extractImages(tabId);
+      console.log(images);
+
+      images = images.slice(0, 15);
 
       progressCallback?.('Extracting links from page (Top 10 - DEMO mode)...');
-      const links = (await this.extractLinks(tabId)).slice(0, 10).reverse();
+      const links = (await this.extractLinks(tabId)).slice(0, 15);
 
       progressCallback?.('Extracting buttons from page (Top 10 - DEMO mode)...');
-      const buttons = (await this.extractButtons(tabId)).slice(0, 10).reverse();
+      const buttons = (await this.extractButtons(tabId)).slice(0, 15);
 
       logger.info('Extracted elements for analysis:', {
         images: images.length,

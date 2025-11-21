@@ -1222,6 +1222,13 @@ const SidePanel = () => {
                 />
               </div>
 
+              {messages.length > 0 && (
+                <div className="flex-1 scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 bg-white">
+                  <MessageList messages={messages} isDarkMode={false} />
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+
               {/* Commented for Demo */}
 
               {/* Show Readability Button */}
